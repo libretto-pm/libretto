@@ -1,27 +1,224 @@
-//! Package downloading for Libretto.
+//! Ultra-fast parallel package downloader for Libretto.
+//!
+//! This crate provides high-performance package downloading with:
+//!
+//! - **HTTP/2 multiplexing** for efficient connection reuse
+//! - **Adaptive concurrency** based on CPU cores (up to 100 concurrent downloads)
+//! - **Resumable downloads** using Range headers
+//! - **Memory-mapped files** for large downloads (>100MB)
+//! - **Multi-algorithm checksums** (SHA-256, SHA-1, SIMD-accelerated BLAKE3)
+//! - **Streaming decompression** for ZIP, tar.gz, tar.bz2, tar.xz, tar.zst
+//! - **Progress tracking** with multi-progress bars
+//! - **Retry with exponential backoff** and mirror fallback
+//! - **Bandwidth throttling** using token bucket algorithm
+//! - **VCS support** for Git, SVN, and Mercurial
+//! - **Authentication** from auth.json (HTTP Basic, Bearer, OAuth)
+//!
+//! # Performance
+//!
+//! Designed to saturate 1Gbps connections with 100 concurrent downloads.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use libretto_downloader::{ParallelDownloader, DownloadSource, Source, ArchiveType};
+//! use std::path::PathBuf;
+//! use url::Url;
+//!
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create downloader with default settings
+//! let downloader = ParallelDownloader::with_defaults()?;
+//!
+//! // Define packages to download
+//! let sources = vec![
+//!     DownloadSource::new(
+//!         "symfony/console",
+//!         "6.4.0",
+//!         Source::dist_with_type(
+//!             Url::parse("https://example.com/console-6.4.0.zip")?,
+//!             ArchiveType::Zip,
+//!         ),
+//!         PathBuf::from("vendor/symfony/console"),
+//!     ),
+//! ];
+//!
+//! // Download all packages concurrently
+//! let results = downloader.download_all(sources).await;
+//!
+//! for result in results {
+//!     match result {
+//!         Ok(r) => println!("Downloaded {} ({} bytes)", r.name, r.size),
+//!         Err(e) => eprintln!("Failed: {}", e),
+//!     }
+//! }
+//!
+//! // Print statistics
+//! let stats = downloader.stats();
+//! println!("Success: {}, Failed: {}", stats.successful, stats.failed);
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Configuration
+//!
+//! ```no_run
+//! use libretto_downloader::{ParallelDownloader, DownloadConfig};
+//! use std::time::Duration;
+//!
+//! # fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! let config = DownloadConfig::builder()
+//!     .max_concurrent(50)
+//!     .bandwidth_limit(Some(10 * 1024 * 1024)) // 10 MB/s
+//!     .connect_timeout(Duration::from_secs(5))
+//!     .max_retries(5)
+//!     .show_progress(true)
+//!     .verify_checksum(true)
+//!     .build();
+//!
+//! let downloader = ParallelDownloader::new(config, None)?;
+//! # Ok(())
+//! # }
+//! ```
 
 #![deny(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
 
-use bytes::Bytes;
-use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
-use libretto_core::{ContentHash, Error, Result};
-use reqwest::Client;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
-use tempfile::NamedTempFile;
-use tokio::io::AsyncWriteExt;
-use tracing::{debug, info};
-use url::Url;
+pub mod checksum;
+mod client;
+pub mod config;
+mod error;
+mod extract;
+mod parallel;
+mod progress;
+mod retry;
+mod source;
+mod stream;
+pub mod throttle;
+mod vcs;
 
-/// Download options.
+// Re-export main types
+pub use checksum::{
+    blake3_file, bytes_to_hex, hex_to_bytes, sha1_file, sha256_file, verify_file,
+    ComputedChecksums, MultiHasher,
+};
+pub use client::HttpClient;
+pub use config::{
+    AuthConfig, BearerAuth, BitbucketOAuth, ChecksumType, DownloadConfig, DownloadConfigBuilder,
+    ExpectedChecksum, GitLabOAuth, HttpBasicAuth,
+};
+pub use error::{DownloadError, Result};
+pub use extract::{extract, extract_with_strip, ExtractOptions, ExtractionResult, Extractor};
+pub use parallel::{DownloadStats, ParallelDownloader, ParallelDownloaderBuilder, StatsSnapshot};
+pub use progress::{DownloadProgress, ProgressStats, ProgressTracker};
+pub use retry::{with_mirrors, with_retry, CircuitBreaker, RetryConfig};
+pub use source::{ArchiveType, DownloadResult, DownloadSource, Source, SourceType, VcsRef};
+pub use stream::{DownloadState, DownloadedFile, StreamDownloader};
+pub use throttle::BandwidthThrottler;
+pub use vcs::{copy_path, GitHandler, GitResult, HgHandler, HgResult, SvnHandler, SvnResult};
+
+/// Simple single-file downloader for backwards compatibility.
+///
+/// For parallel downloads, use [`ParallelDownloader`] instead.
+#[derive(Debug)]
+pub struct Downloader {
+    inner: ParallelDownloader,
+}
+
+impl Downloader {
+    /// Create a new downloader with default options.
+    ///
+    /// # Errors
+    /// Returns error if HTTP client cannot be created.
+    pub fn with_defaults() -> Result<Self> {
+        let config = DownloadConfig::builder()
+            .max_concurrent(1)
+            .show_progress(true)
+            .build();
+        Ok(Self {
+            inner: ParallelDownloader::new(config, None)?,
+        })
+    }
+
+    /// Create a new downloader with custom options.
+    ///
+    /// # Errors
+    /// Returns error if HTTP client cannot be created.
+    pub fn new(options: &DownloadOptions) -> Result<Self> {
+        let config = DownloadConfig::builder()
+            .max_concurrent(1)
+            .connect_timeout(options.connect_timeout)
+            .read_timeout(options.read_timeout)
+            .max_retries(options.retries)
+            .show_progress(options.show_progress)
+            .verify_checksum(options.verify_checksum)
+            .build();
+        Ok(Self {
+            inner: ParallelDownloader::new(config, None)?,
+        })
+    }
+
+    /// Download a URL to a file.
+    ///
+    /// # Errors
+    /// Returns error if download fails.
+    pub async fn download(
+        &self,
+        url: &url::Url,
+        dest: &std::path::Path,
+    ) -> Result<SimpleDownloadResult> {
+        let progress = ProgressTracker::new(self.inner.config().show_progress);
+        let dl_progress = progress.start_download("single", url.as_str(), None);
+
+        let throttler = BandwidthThrottler::new(self.inner.config().bandwidth_limit);
+        let stream_dl = StreamDownloader::new(
+            HttpClient::new((*self.inner.config()).clone(), None)?,
+            throttler,
+        );
+
+        let result = stream_dl.download(url, dest, &[], &dl_progress).await?;
+
+        dl_progress.complete(result.size);
+        progress.finish();
+
+        Ok(SimpleDownloadResult {
+            path: result.path,
+            hash: libretto_core::ContentHash::from_bytes(&result.checksums.blake3),
+            size: result.size,
+        })
+    }
+
+    /// Download to bytes in memory.
+    ///
+    /// # Errors
+    /// Returns error if download fails.
+    pub async fn download_bytes(&self, url: &url::Url) -> Result<bytes::Bytes> {
+        let client = HttpClient::new((*self.inner.config()).clone(), None)?;
+        let response = client.get(url).await?;
+        response
+            .bytes()
+            .await
+            .map_err(|e| DownloadError::network(e.to_string()))
+    }
+
+    /// Verify a file's checksum.
+    ///
+    /// # Errors
+    /// Returns error if checksums don't match.
+    pub fn verify(&self, path: &std::path::Path, expected: &str, name: &str) -> Result<()> {
+        if let Some(checksum) = ExpectedChecksum::from_hex(expected) {
+            verify_file(path, &checksum, name)?;
+        }
+        Ok(())
+    }
+}
+
+/// Download options for backwards compatibility.
 #[derive(Debug, Clone)]
 pub struct DownloadOptions {
     /// Connection timeout.
-    pub connect_timeout: Duration,
+    pub connect_timeout: std::time::Duration,
     /// Read timeout.
-    pub read_timeout: Duration,
+    pub read_timeout: std::time::Duration,
     /// Number of retries.
     pub retries: u32,
     /// Show progress bar.
@@ -33,8 +230,8 @@ pub struct DownloadOptions {
 impl Default for DownloadOptions {
     fn default() -> Self {
         Self {
-            connect_timeout: Duration::from_secs(10),
-            read_timeout: Duration::from_secs(60),
+            connect_timeout: std::time::Duration::from_secs(10),
+            read_timeout: std::time::Duration::from_secs(60),
             retries: 3,
             show_progress: true,
             verify_checksum: true,
@@ -42,233 +239,15 @@ impl Default for DownloadOptions {
     }
 }
 
-/// Download result.
+/// Simple download result for backwards compatibility.
 #[derive(Debug)]
-pub struct DownloadResult {
+pub struct SimpleDownloadResult {
     /// Path to downloaded file.
-    pub path: PathBuf,
-    /// Content hash.
-    pub hash: ContentHash,
+    pub path: std::path::PathBuf,
+    /// Content hash (BLAKE3).
+    pub hash: libretto_core::ContentHash,
     /// Size in bytes.
     pub size: u64,
-}
-
-/// HTTP downloader with progress and retry support.
-#[derive(Debug)]
-pub struct Downloader {
-    client: Client,
-    options: DownloadOptions,
-}
-
-impl Downloader {
-    /// Create new downloader.
-    ///
-    /// # Errors
-    /// Returns error if HTTP client cannot be created.
-    pub fn new(options: DownloadOptions) -> Result<Self> {
-        let client = Client::builder()
-            .connect_timeout(options.connect_timeout)
-            .timeout(options.read_timeout)
-            .gzip(true)
-            .brotli(true)
-            .deflate(true)
-            .build()
-            .map_err(|e| Error::Network(e.to_string()))?;
-
-        Ok(Self { client, options })
-    }
-
-    /// Create with default options.
-    ///
-    /// # Errors
-    /// Returns error if HTTP client cannot be created.
-    pub fn with_defaults() -> Result<Self> {
-        Self::new(DownloadOptions::default())
-    }
-
-    /// Download URL to file.
-    ///
-    /// # Errors
-    /// Returns error if download fails.
-    pub async fn download(&self, url: &Url, dest: &Path) -> Result<DownloadResult> {
-        let mut last_error = None;
-
-        for attempt in 0..=self.options.retries {
-            if attempt > 0 {
-                debug!(attempt, url = %url, "retrying download");
-                tokio::time::sleep(Duration::from_secs(u64::from(attempt))).await;
-            }
-
-            match self.try_download(url, dest).await {
-                Ok(result) => return Ok(result),
-                Err(e) => {
-                    debug!(error = %e, attempt, "download failed");
-                    last_error = Some(e);
-                }
-            }
-        }
-
-        Err(last_error.unwrap_or_else(|| Error::Network("download failed".into())))
-    }
-
-    /// Download to bytes in memory.
-    ///
-    /// # Errors
-    /// Returns error if download fails.
-    pub async fn download_bytes(&self, url: &Url) -> Result<Bytes> {
-        let response = self
-            .client
-            .get(url.as_str())
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-
-        if !response.status().is_success() {
-            return Err(Error::Network(format!("HTTP {}", response.status())));
-        }
-
-        response
-            .bytes()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))
-    }
-
-    async fn try_download(&self, url: &Url, dest: &Path) -> Result<DownloadResult> {
-        debug!(url = %url, dest = ?dest, "downloading");
-
-        let response = self
-            .client
-            .get(url.as_str())
-            .send()
-            .await
-            .map_err(|e| Error::Network(e.to_string()))?;
-
-        if !response.status().is_success() {
-            return Err(Error::Network(format!("HTTP {}", response.status())));
-        }
-
-        let total_size = response.content_length();
-
-        let progress = if self.options.show_progress {
-            let pb = ProgressBar::new(total_size.unwrap_or(0));
-            pb.set_style(
-                ProgressStyle::default_bar()
-                    .template("{spinner:.green} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                    .unwrap_or_else(|_| ProgressStyle::default_bar())
-                    .progress_chars("#>-"),
-            );
-            Some(pb)
-        } else {
-            None
-        };
-
-        // Download to temp file first
-        let temp_file = NamedTempFile::new().map_err(|e| Error::io(dest, e))?;
-        let mut file =
-            tokio::fs::File::from_std(temp_file.reopen().map_err(|e| Error::io(dest, e))?);
-        let mut hasher = libretto_core::ContentHasher::new();
-        let mut downloaded: u64 = 0;
-
-        let mut stream = response.bytes_stream();
-
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| Error::Network(e.to_string()))?;
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| Error::io(dest, e))?;
-            hasher.update(&chunk);
-            downloaded += chunk.len() as u64;
-
-            if let Some(ref pb) = progress {
-                pb.set_position(downloaded);
-            }
-        }
-
-        file.flush().await.map_err(|e| Error::io(dest, e))?;
-        drop(file);
-
-        if let Some(pb) = progress {
-            pb.finish_and_clear();
-        }
-
-        // Move temp file to destination
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
-        }
-
-        temp_file
-            .persist(dest)
-            .map_err(|e| Error::io(dest, e.error))?;
-
-        let hash = hasher.finalize();
-        info!(url = %url, size = downloaded, hash = %hash.short(), "download complete");
-
-        Ok(DownloadResult {
-            path: dest.to_path_buf(),
-            hash,
-            size: downloaded,
-        })
-    }
-
-    /// Verify downloaded file checksum.
-    ///
-    /// # Errors
-    /// Returns error if checksums don't match.
-    pub fn verify(&self, path: &Path, expected: &str, name: &str) -> Result<()> {
-        let actual = ContentHash::from_file(path).map_err(|e| Error::io(path, e))?;
-
-        if let Some(expected_hash) = ContentHash::from_hex(expected) {
-            if actual != expected_hash {
-                return Err(Error::ChecksumMismatch {
-                    name: name.to_string(),
-                    expected: expected.to_string(),
-                    actual: actual.to_hex(),
-                });
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// Parallel downloader for multiple files.
-#[derive(Debug)]
-pub struct ParallelDownloader {
-    downloader: Downloader,
-    concurrency: usize,
-}
-
-impl ParallelDownloader {
-    /// Create parallel downloader.
-    ///
-    /// # Errors
-    /// Returns error if downloader cannot be created.
-    pub fn new(concurrency: usize) -> Result<Self> {
-        Ok(Self {
-            downloader: Downloader::with_defaults()?,
-            concurrency,
-        })
-    }
-
-    /// Download multiple URLs.
-    ///
-    /// # Errors
-    /// Returns first error encountered.
-    pub async fn download_all(
-        &self,
-        downloads: Vec<(Url, PathBuf)>,
-    ) -> Result<Vec<DownloadResult>> {
-        let results = futures::stream::iter(downloads)
-            .map(|(url, dest)| {
-                let downloader = &self.downloader;
-                async move { downloader.download(&url, &dest).await }
-            })
-            .buffer_unordered(self.concurrency)
-            .collect::<Vec<_>>()
-            .await;
-
-        results.into_iter().collect()
-    }
 }
 
 #[cfg(test)]
@@ -280,11 +259,25 @@ mod tests {
         let opts = DownloadOptions::default();
         assert_eq!(opts.retries, 3);
         assert!(opts.show_progress);
+        assert!(opts.verify_checksum);
     }
 
     #[tokio::test]
     async fn downloader_creation() {
         let downloader = Downloader::with_defaults();
         assert!(downloader.is_ok());
+    }
+
+    #[tokio::test]
+    async fn parallel_downloader_creation() {
+        let downloader = ParallelDownloader::with_defaults();
+        assert!(downloader.is_ok());
+    }
+
+    #[test]
+    fn config_adaptive_concurrency() {
+        let concurrency = DownloadConfig::adaptive_concurrency();
+        assert!(concurrency >= 8);
+        assert!(concurrency <= 100);
     }
 }

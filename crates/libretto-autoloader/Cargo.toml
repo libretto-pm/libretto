@@ -1,6 +1,6 @@
 [package]
 name = "libretto-autoloader"
-description = "PHP autoloader generation for Libretto"
+description = "Ultra-fast PHP autoloader generation for Libretto"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,8 +12,49 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+# Internal crates
 libretto-core = { workspace = true }
+
+# Serialization
 serde = { workspace = true }
+sonic-rs = { workspace = true }
+
+# Zero-copy serialization for caching
+rkyv = { workspace = true }
+
+# Logging
 tracing = { workspace = true }
+
+# Filesystem
 walkdir = { workspace = true }
+memmap2 = { workspace = true }
+
+# Parallelism
+rayon = { workspace = true }
+
+# PHP parsing
+tree-sitter = { workspace = true }
+tree-sitter-php = { workspace = true }
+streaming-iterator = "0.1"
+
+# Fast hashing
+blake3 = { workspace = true }
+ahash = { workspace = true }
+
+# Fast byte searching
+memchr = { workspace = true }
+
+# Regex for fallback parsing
 regex = { workspace = true }
+
+# Concurrent data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "autoloader_bench"
+harness = false

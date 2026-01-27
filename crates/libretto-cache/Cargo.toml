@@ -1,6 +1,6 @@
 [package]
 name = "libretto-cache"
-description = "Package caching for Libretto"
+description = "Advanced multi-tier, content-addressable cache system for Libretto"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,14 +12,56 @@ authors.workspace = true
 workspace = true
 
 [dependencies]
+# Internal crates
 libretto-core = { workspace = true }
 libretto-platform = { workspace = true }
+
+# Async runtime
 tokio = { workspace = true }
+
+# Concurrent data structures
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
+moka = { workspace = true }
+
+# Zero-copy serialization
+rkyv = { workspace = true }
+
+# Logging
 tracing = { workspace = true }
+
+# Filesystem
 tempfile = { workspace = true }
 walkdir = { workspace = true }
+
+# Time
 chrono = { workspace = true }
+
+# Serialization
 serde = { workspace = true }
 sonic-rs = { workspace = true }
+
+
+
+# Memory mapping
+memmap2 = { workspace = true }
+
+# Compression (zstd)
+zstd = "0.13"
+
+# Fast hashing
+ahash = { workspace = true }
+blake3 = { workspace = true }
+
+# Bytes handling
+bytes = { workspace = true }
+
+# Fast byte searching (SIMD fallback)
+memchr = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "cache_bench"
+harness = false

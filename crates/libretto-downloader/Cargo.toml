@@ -1,6 +1,6 @@
 [package]
 name = "libretto-downloader"
-description = "Package downloading for Libretto"
+description = "Ultra-fast parallel package downloading for Libretto"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,11 +14,111 @@ workspace = true
 [dependencies]
 libretto-core = { workspace = true }
 libretto-platform = { workspace = true }
-tokio = { workspace = true }
-reqwest = { workspace = true }
+libretto-archive = { workspace = true }
+libretto-vcs = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["full", "parking_lot", "sync", "io-util", "fs"] }
+tokio-util = { version = "0.7", features = ["io", "codec"] }
+
+# HTTP client with HTTP/2 multiplexing
+reqwest = { workspace = true, features = [
+    "rustls-tls",
+    "gzip",
+    "brotli",
+    "deflate",
+    "zstd",
+    "json",
+    "stream",
+    "http2",
+    "socks",
+] }
+hyper = { version = "1.4", features = ["http1", "http2", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "http2"] }
+
+# Futures and streams
 futures = { workspace = true }
+futures-util = "0.3"
+futures-lite = "2.3"
+async-stream = "0.3"
+
+# Streaming compression/decompression
+async-compression = { version = "0.4", features = [
+    "tokio",
+    "gzip",
+    "deflate",
+    "brotli",
+    "zstd",
+    "xz",
+    "bzip2",
+] }
+
+# ZIP handling (async)
+async_zip = { version = "0.0.17", features = ["tokio", "deflate", "bzip2", "zstd", "lzma"] }
+
+# Tar handling
+tokio-tar = "0.3"
+
+# Bytes and buffers
 bytes = { workspace = true }
-tracing = { workspace = true }
-tempfile = { workspace = true }
+
+# Hashing - BLAKE3 with SIMD
+blake3 = { workspace = true }
+sha2 = "0.10"
+sha1 = "0.10"
+digest = "0.10"
+
+# JSON parsing (high performance)
+sonic-rs = { workspace = true }
+serde = { workspace = true }
+
+# Progress bars
 indicatif = { workspace = true }
+
+# Terminal
+console = { workspace = true }
+
+# URL handling
 url = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Temp files
+tempfile = { workspace = true }
+
+# Memory mapping
+memmap2 = "0.9"
+
+# Concurrent data structures
+dashmap = { workspace = true }
+parking_lot = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+
+# Rate limiting / throttling
+governor = "0.6"
+nonzero_ext = "0.3"
+
+# Backoff / retry
+backon = "1.2"
+
+# HTTP headers
+http = "1.1"
+
+# Pin utilities
+pin-project-lite = "0.2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
+wiremock = "0.6"
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "download_bench"
+harness = false

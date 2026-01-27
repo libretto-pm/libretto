@@ -86,7 +86,7 @@ pub async fn run(args: CacheClearArgs) -> Result<()> {
         }
     }
 
-    let stats = cache.stats();
+    let stats = cache.legacy_stats();
     println!();
     println!(
         "{} {} entries, {} bytes",

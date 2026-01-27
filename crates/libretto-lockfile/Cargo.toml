@@ -1,0 +1,66 @@
+[package]
+name = "libretto-lockfile"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords = ["composer", "lockfile", "package-manager", "php", "atomic"]
+categories = ["development-tools", "filesystem"]
+description = "Ultra-high-performance composer.lock file management with atomic updates"
+
+[dependencies]
+# Internal crates
+libretto-core = { workspace = true }
+
+# Serialization
+sonic-rs = { workspace = true }
+serde = { workspace = true }
+
+# Fast hashing (SIMD-accelerated)
+blake3 = { workspace = true }
+md-5 = "0.10"
+sha2 = { workspace = true }
+digest = { workspace = true }
+
+# Concurrent structures
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+rayon = { workspace = true }
+
+# Fast hash maps
+ahash = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# File system
+fs2 = "0.4"
+tempfile = { workspace = true }
+memmap2 = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Byte utilities
+memchr = { workspace = true }
+bytes = { workspace = true }
+
+# Version parsing
+semver = { workspace = true }
+
+# Tracing
+tracing = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+rand = "0.8"
+
+[[bench]]
+name = "lockfile"
+harness = false
+
+[lints]
+workspace = true

@@ -1,8 +1,100 @@
-//! Package caching for Libretto.
+//! Advanced multi-tier, content-addressable cache system for Libretto.
+//!
+//! This crate provides a high-performance caching system with:
+//!
+//! - **L1 Memory Cache**: Fast in-memory LRU cache using [moka](https://crates.io/crates/moka)
+//!   with configurable size limits (default 256MB)
+//!
+//! - **L2 Disk Cache**: Persistent content-addressable storage using BLAKE3 hashes
+//!   for deduplication and fast lookups
+//!
+//! - **Bloom Filter**: Probabilistic data structure for fast "not cached" checks,
+//!   avoiding expensive disk lookups for items definitely not in cache
+//!
+//! - **Zero-Copy Deserialization**: Uses [rkyv](https://crates.io/crates/rkyv) for
+//!   fast metadata index serialization
+//!
+//! - **Compression**: Zstd compression (level 3) for cached data to reduce disk usage
+//!
+//! - **TTL-Based Expiration**: Configurable time-to-live for different entry types
+//!
+//! - **LRU Eviction**: Automatic eviction of least-recently-used entries when limits exceeded
+//!
+//! - **Background Maintenance**: Garbage collection and cache warming tasks
+//!
+//! ## Performance Targets
+//!
+//! - Cache operations < 1ms
+//! - Support 100k+ cached packages
+//! - Startup cache load < 50ms
+//!
+//! ## Cache Locations (XDG Base Directory Compliant)
+//!
+//! - Linux: `~/.cache/libretto/`
+//! - macOS: `~/Library/Caches/libretto/`
+//! - Windows: `%LOCALAPPDATA%\libretto\cache\`
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use libretto_cache::{TieredCache, CacheConfig, CacheEntryType};
+//! use std::time::Duration;
+//!
+//! # fn main() -> libretto_core::Result<()> {
+//! // Create cache with default settings
+//! let cache = TieredCache::new()?;
+//!
+//! // Or customize configuration
+//! let config = CacheConfig::builder()
+//!     .l1_size_limit(512 * 1024 * 1024) // 512MB
+//!     .compression_level(5)
+//!     .build();
+//! let cache = TieredCache::with_config(config)?;
+//!
+//! // Store data
+//! let data = b"package contents...";
+//! let hash = cache.put(data, CacheEntryType::Package, None, None)?;
+//!
+//! // Retrieve data
+//! if let Some(cached_data) = cache.get(&hash)? {
+//!     assert_eq!(cached_data, data);
+//! }
+//!
+//! // Check statistics
+//! let stats = cache.stats();
+//! println!("Hit rate: {:.1}%", stats.hit_rate * 100.0);
+//! # Ok(())
+//! # }
+//! ```
 
 #![deny(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
+#![allow(unsafe_code)] // Required for memmap2
 
+mod bloom;
+mod compression;
+mod config;
+mod index;
+mod l1;
+mod l2;
+pub mod simd;
+mod stats;
+mod tiered;
+
+// Re-export main types
+pub use bloom::{BloomFilter, BloomFilterStats, ConcurrentBloomFilter};
+pub use compression::{
+    compress, compress_with_stats, decompress, decompress_with_hint, is_compressed,
+    should_compress, strip_magic, with_magic, CompressionStats, COMPRESSED_MAGIC,
+};
+pub use config::{CacheConfig, CacheConfigBuilder, CacheEntryType};
+pub use index::{CacheIndex, IndexEntry};
+pub use l1::{L1Cache, L1CacheBuilder, L1Entry};
+pub use l2::L2Cache;
+pub use stats::{CacheStats, CacheStatsSnapshot, SizeTracker};
+pub use tiered::{ClearPattern, ClearResult, GcResult, TieredCache};
+
+// Legacy API for backwards compatibility
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use libretto_core::{ContentHash, Error, PackageId, Result};
@@ -13,7 +105,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-/// Cache entry metadata.
+/// Legacy cache entry metadata.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheEntry {
     /// Package identifier.
@@ -30,9 +122,9 @@ pub struct CacheEntry {
     pub size: u64,
 }
 
-/// Cache statistics.
+/// Legacy cache statistics.
 #[derive(Debug, Default, Clone)]
-pub struct CacheStats {
+pub struct LegacyCacheStats {
     /// Number of entries.
     pub entries: usize,
     /// Total size in bytes.
@@ -43,12 +135,15 @@ pub struct CacheStats {
     pub misses: u64,
 }
 
-/// Package cache manager.
+/// Legacy package cache manager.
+///
+/// This provides backward compatibility with the original Cache API.
+/// For new code, use [`TieredCache`] instead.
 #[derive(Debug)]
 pub struct Cache {
     root: PathBuf,
     entries: DashMap<String, CacheEntry>,
-    stats: Arc<RwLock<CacheStats>>,
+    stats: Arc<RwLock<LegacyCacheStats>>,
 }
 
 impl Cache {
@@ -70,7 +165,7 @@ impl Cache {
         let cache = Self {
             root,
             entries: DashMap::new(),
-            stats: Arc::new(RwLock::new(CacheStats::default())),
+            stats: Arc::new(RwLock::new(LegacyCacheStats::default())),
         };
 
         cache.load_index()?;
@@ -184,7 +279,7 @@ impl Cache {
     /// Returns error if cache cannot be cleared.
     pub fn clear(&self) -> Result<()> {
         self.entries.clear();
-        *self.stats.write() = CacheStats::default();
+        *self.stats.write() = LegacyCacheStats::default();
 
         if self.root.exists() {
             std::fs::remove_dir_all(&self.root).map_err(|e| Error::io(&self.root, e))?;
@@ -197,7 +292,7 @@ impl Cache {
 
     /// Get cache statistics.
     #[must_use]
-    pub fn stats(&self) -> CacheStats {
+    pub fn legacy_stats(&self) -> LegacyCacheStats {
         self.stats.read().clone()
     }
 
@@ -325,7 +420,19 @@ mod tests {
         let pkg_id = PackageId::new("test", "package");
         assert!(!cache.contains(&pkg_id, "1.0.0"));
 
-        let stats = cache.stats();
+        let stats = cache.legacy_stats();
         assert_eq!(stats.entries, 0);
+    }
+
+    #[test]
+    fn tiered_cache_creation() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = CacheConfig {
+            root: Some(dir.path().join("tiered")),
+            ..Default::default()
+        };
+        let cache = TieredCache::with_config(config).unwrap();
+
+        assert_eq!(cache.entry_count(), 0);
     }
 }
