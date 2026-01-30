@@ -99,10 +99,6 @@ pub async fn set_secure_dir_permissions(path: impl AsRef<Path>) -> Result<()> {
 
 #[cfg(windows)]
 async fn set_windows_permissions(path: &Path, mode: PermissionMode) -> Result<()> {
-    use windows::Win32::Security::{Authorization::*, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
-    use windows::Win32::Storage::FileSystem::*;
-    use windows::core::PCWSTR;
-
     // For private mode, set restrictive ACLs
     if mode == PermissionMode::Private || mode == PermissionMode::PrivateExecutable {
         // Get current user SID
