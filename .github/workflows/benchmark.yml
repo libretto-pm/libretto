@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -50,7 +50,7 @@ jobs:
           if [ -d "target/criterion-baseline" ]; then
             cp -r target/criterion-baseline target/criterion
           fi
-          
+
           # Run all benchmarks
           cargo bench --package libretto-bench 2>&1 | tee benchmark-output.txt
 
@@ -76,12 +76,12 @@ jobs:
         run: |
           # Parse benchmark output for significant regressions (>5%)
           REGRESSIONS=""
-          
+
           # Look for "Performance has regressed" or significant slowdowns
           if grep -q "Performance has regressed" benchmark-output.txt; then
             REGRESSIONS=$(grep -A2 "Performance has regressed" benchmark-output.txt | head -20)
           fi
-          
+
           if [ -n "$REGRESSIONS" ]; then
             echo "REGRESSIONS_FOUND=true" >> $GITHUB_OUTPUT
             echo "REGRESSION_DETAILS<<EOF" >> $GITHUB_OUTPUT
@@ -99,36 +99,36 @@ jobs:
           script: |
             const fs = require('fs');
             const output = fs.readFileSync('benchmark-output.txt', 'utf8');
-            
+
             // Extract summary lines
             const lines = output.split('\n');
-            const summaryLines = lines.filter(line => 
-              line.includes('time:') || 
+            const summaryLines = lines.filter(line =>
+              line.includes('time:') ||
               line.includes('Performance has') ||
               line.includes('No change')
             ).slice(0, 30);
-            
+
             const hasRegressions = '${{ steps.regression-check.outputs.REGRESSIONS_FOUND }}' === 'true';
             const status = hasRegressions ? '⚠️ Performance Regressions Detected' : '✅ No Performance Regressions';
-            
+
             let body = `## Benchmark Results\n\n${status}\n\n`;
             body += `<details><summary>View benchmark summary</summary>\n\n\`\`\`\n`;
             body += summaryLines.join('\n') || 'No benchmark changes detected.';
             body += `\n\`\`\`\n</details>\n\n`;
             body += `📊 [View full report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n`;
-            
+
             // Find existing comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
+
+            const botComment = comments.find(comment =>
+              comment.user.type === 'Bot' &&
               comment.body.includes('## Benchmark Results')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -166,7 +166,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -187,7 +187,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install valgrind
         run: sudo apt-get install -y valgrind
