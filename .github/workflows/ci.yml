@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -80,6 +83,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -87,7 +94,7 @@ jobs:
 
       - name: Install musl tools (Linux musl)
         if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        run: sudo apt-get install -y musl-tools
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -130,6 +137,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -150,6 +161,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -184,7 +198,7 @@ jobs:
       - name: Install cross-compilation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools
+          sudo apt-get install -y gcc-aarch64-linux-gnu musl-tools lld
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -201,6 +215,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -216,6 +233,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -234,6 +254,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -261,6 +284,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install Rust 1.89
         uses: dtolnay/rust-toolchain@1.89
@@ -295,6 +321,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
