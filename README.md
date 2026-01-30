@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/libretto-pm/libretto/actions"><img src="https://github.com/libretto-pm/libretto/workflows/CI/badge.svg" alt="CI Status"></a>
   <a href="https://github.com/libretto-pm/libretto/blob/master/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/libretto-pm/libretto"><img src="https://img.shields.io/badge/rust-1.75%2B-orange.svg" alt="Rust Version"></a>
+  <a href="https://github.com/libretto-pm/libretto"><img src="https://img.shields.io/badge/rust-1.89%2B-orange.svg" alt="Rust Version"></a>
 </p>
 
 ---
@@ -33,7 +33,7 @@ Download the latest release for your platform from the [Releases](https://github
 
 ### Build from Source
 
-Requires Rust 1.75 or later:
+Requires Rust 1.89 or later:
 
 ```bash
 git clone https://github.com/libretto-pm/libretto.git
@@ -215,7 +215,7 @@ COMPOSER_VENDOR_DIR=/path/to/vendor
 
 ### Prerequisites
 
-- Rust 1.75 or later
+- Rust 1.89 or later
 - For cross-compilation: appropriate target toolchains
 
 ### Building
