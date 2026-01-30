@@ -191,7 +191,7 @@ pub fn get_umask() -> u32 {
     unsafe {
         let mask = libc::umask(0);
         libc::umask(mask);
-        mask
+        mask as u32
     }
 }
 
