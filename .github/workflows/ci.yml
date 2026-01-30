@@ -166,7 +166,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run benchmarks
-        run: cargo bench --package libretto-platform -- --noplot
+        run: cargo bench --package libretto-platform --bench platform_bench -- --noplot
 
   # Cross-compilation check
   cross-compile:
