@@ -16,6 +16,8 @@ pub enum VcsType {
     Hg,
     /// Fossil.
     Fossil,
+    /// Perforce.
+    Perforce,
 }
 
 impl VcsType {
@@ -27,6 +29,7 @@ impl VcsType {
             Self::Svn => "svn",
             Self::Hg => "hg",
             Self::Fossil => "fossil",
+            Self::Perforce => "p4",
         }
     }
 
@@ -43,6 +46,8 @@ impl VcsType {
             Some(Self::Hg)
         } else if path.join(".fslckout").exists() || path.join("_FOSSIL_").exists() {
             Some(Self::Fossil)
+        } else if path.join(".p4config").exists() {
+            Some(Self::Perforce)
         } else {
             None
         }
@@ -56,6 +61,7 @@ impl fmt::Display for VcsType {
             Self::Svn => write!(f, "svn"),
             Self::Hg => write!(f, "hg"),
             Self::Fossil => write!(f, "fossil"),
+            Self::Perforce => write!(f, "perforce"),
         }
     }
 }
@@ -69,6 +75,7 @@ impl std::str::FromStr for VcsType {
             "svn" | "subversion" => Ok(Self::Svn),
             "hg" | "mercurial" => Ok(Self::Hg),
             "fossil" => Ok(Self::Fossil),
+            "p4" | "perforce" => Ok(Self::Perforce),
             _ => Err(format!("unknown vcs type: {s}")),
         }
     }

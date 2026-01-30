@@ -72,14 +72,64 @@ pub async fn run(_args: DiagnoseArgs) -> Result<()> {
         &mut errors,
     );
 
-    // Check git
+    // Check VCS tools
+    println!();
+    println!("Version Control Systems:");
+    print_check("  git", check_git(), colors, &mut warnings, &mut errors);
     print_check(
-        "Checking git",
-        check_git(),
+        "  svn (Subversion)",
+        check_svn(),
         colors,
         &mut warnings,
         &mut errors,
     );
+    print_check(
+        "  hg (Mercurial)",
+        check_hg(),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+    print_check(
+        "  fossil",
+        check_fossil(),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+    print_check(
+        "  p4 (Perforce)",
+        check_perforce(),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+
+    // Check archive tools
+    println!();
+    println!("Archive Tools:");
+    print_check(
+        "  zip/tar/gz/bz2/xz (native)",
+        CheckResult::Ok("Built-in support".to_string()),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+    print_check(
+        "  7z/7zz (7-Zip)",
+        check_7z(),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+    print_check(
+        "  unrar (RAR)",
+        check_unrar(),
+        colors,
+        &mut warnings,
+        &mut errors,
+    );
+    println!();
 
     // Check cache directory
     print_check(
@@ -318,7 +368,92 @@ fn check_git() -> CheckResult {
             CheckResult::Ok(version)
         }
         Ok(_) => CheckResult::Error("git is installed but returned an error".to_string()),
-        Err(_) => CheckResult::Warning("git not found in PATH".to_string()),
+        Err(_) => CheckResult::Warning("Not installed (required for git packages)".to_string()),
+    }
+}
+
+fn check_svn() -> CheckResult {
+    match Command::new("svn").args(["--version", "--quiet"]).output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            CheckResult::Ok(format!("version {version}"))
+        }
+        Ok(_) => CheckResult::Warning("Installed but returned an error".to_string()),
+        Err(_) => CheckResult::Ok("Not installed (optional)".to_string()),
+    }
+}
+
+fn check_hg() -> CheckResult {
+    match Command::new("hg").args(["--version", "--quiet"]).output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("unknown")
+                .trim()
+                .to_string();
+            CheckResult::Ok(format!("version {version}"))
+        }
+        Ok(_) => CheckResult::Warning("Installed but returned an error".to_string()),
+        Err(_) => CheckResult::Ok("Not installed (optional)".to_string()),
+    }
+}
+
+fn check_fossil() -> CheckResult {
+    match Command::new("fossil").args(["version"]).output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("unknown")
+                .trim()
+                .to_string();
+            CheckResult::Ok(version)
+        }
+        Ok(_) => CheckResult::Warning("Installed but returned an error".to_string()),
+        Err(_) => CheckResult::Ok("Not installed (optional)".to_string()),
+    }
+}
+
+fn check_perforce() -> CheckResult {
+    match Command::new("p4").args(["-V"]).output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .find(|l| l.contains("Rev."))
+                .unwrap_or("unknown version")
+                .trim()
+                .to_string();
+            CheckResult::Ok(version)
+        }
+        Ok(_) => CheckResult::Warning("Installed but returned an error".to_string()),
+        Err(_) => CheckResult::Ok("Not installed (optional)".to_string()),
+    }
+}
+
+fn check_7z() -> CheckResult {
+    // Try different 7z command names
+    for cmd in &["7z", "7zz", "7za"] {
+        if let Ok(output) = Command::new(cmd).arg("--help").output() {
+            if output.status.success() {
+                return CheckResult::Ok(format!("{cmd} available"));
+            }
+        }
+    }
+    CheckResult::Ok("Not installed (optional, for .7z files)".to_string())
+}
+
+fn check_unrar() -> CheckResult {
+    match Command::new("unrar").output() {
+        Ok(output)
+            if output.status.success()
+                || output.status.code() == Some(0)
+                || output.status.code() == Some(7) =>
+        {
+            CheckResult::Ok("Available".to_string())
+        }
+        Ok(_) => CheckResult::Warning("Installed but returned an error".to_string()),
+        Err(_) => CheckResult::Ok("Not installed (optional, for .rar files)".to_string()),
     }
 }
 

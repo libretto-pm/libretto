@@ -37,6 +37,13 @@ pub enum VcsError {
         message: String,
     },
 
+    /// Perforce operation failed.
+    #[error("perforce error: {message}")]
+    Perforce {
+        /// Error message.
+        message: String,
+    },
+
     /// Clone operation failed.
     #[error("clone failed for {url}: {reason}")]
     CloneFailed {

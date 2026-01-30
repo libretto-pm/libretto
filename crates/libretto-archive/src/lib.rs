@@ -1,15 +1,27 @@
 //! Archive extraction for Libretto.
+//!
+//! Supports multiple archive formats:
+//! - **ZIP** - Native support via `zip` crate
+//! - **TAR** - Native support via `tar` crate
+//! - **TAR.GZ** - Native support via `flate2` crate
+//! - **TAR.BZ2** - Native support via `bzip2` crate
+//! - **TAR.XZ** - Native support via `xz2` crate
+//! - **7Z** - CLI support (requires `7z` or `7zz` binary)
+//! - **RAR** - CLI support (requires `unrar` binary)
 
 #![warn(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
 
+use bzip2::read::BzDecoder;
 use flate2::read::GzDecoder;
 use libretto_core::{Error, Result};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use std::process::Command;
+use tracing::{debug, info, warn};
 use walkdir::WalkDir;
+use xz2::read::XzDecoder;
 
 /// Supported archive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +32,14 @@ pub enum ArchiveType {
     TarGz,
     /// Plain tarball.
     Tar,
+    /// Bzip2 compressed tarball.
+    TarBz2,
+    /// XZ compressed tarball.
+    TarXz,
+    /// 7-Zip archive (requires CLI tool).
+    SevenZip,
+    /// RAR archive (requires CLI tool).
+    Rar,
 }
 
 impl ArchiveType {
@@ -39,6 +59,15 @@ impl ArchiveType {
             Some(Self::Zip)
         } else if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
             Some(Self::TarGz)
+        } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") || lower.ends_with(".tbz")
+        {
+            Some(Self::TarBz2)
+        } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+            Some(Self::TarXz)
+        } else if lower.ends_with(".7z") {
+            Some(Self::SevenZip)
+        } else if lower.ends_with(".rar") {
+            Some(Self::Rar)
         } else if lower.ends_with(".tar") {
             Some(Self::Tar)
         } else {
@@ -53,6 +82,26 @@ impl ArchiveType {
             Self::Zip => "zip",
             Self::TarGz => "tar.gz",
             Self::Tar => "tar",
+            Self::TarBz2 => "tar.bz2",
+            Self::TarXz => "tar.xz",
+            Self::SevenZip => "7z",
+            Self::Rar => "rar",
+        }
+    }
+
+    /// Check if this archive type requires an external CLI tool.
+    #[must_use]
+    pub const fn requires_cli(self) -> bool {
+        matches!(self, Self::SevenZip | Self::Rar)
+    }
+
+    /// Check if the required CLI tool is available.
+    #[must_use]
+    pub fn is_tool_available(self) -> bool {
+        match self {
+            Self::SevenZip => is_7z_available(),
+            Self::Rar => is_unrar_available(),
+            _ => true, // Native support, always available
         }
     }
 }
@@ -86,7 +135,15 @@ impl Extractor {
             Error::Archive(format!("unknown archive type: {}", archive.display()))
         })?;
 
-        debug!(archive = ?archive, dest = ?dest, "extracting");
+        debug!(archive = ?archive, dest = ?dest, archive_type = ?archive_type, "extracting");
+
+        // Check if CLI tool is available for formats that require it
+        if archive_type.requires_cli() && !archive_type.is_tool_available() {
+            return Err(Error::Archive(format!(
+                "required tool for {} extraction is not installed",
+                archive_type.extension()
+            )));
+        }
 
         std::fs::create_dir_all(dest).map_err(|e| Error::io(dest, e))?;
 
@@ -94,6 +151,10 @@ impl Extractor {
             ArchiveType::Zip => self.extract_zip(archive, dest)?,
             ArchiveType::TarGz => self.extract_tar_gz(archive, dest)?,
             ArchiveType::Tar => self.extract_tar(archive, dest)?,
+            ArchiveType::TarBz2 => self.extract_tar_bz2(archive, dest)?,
+            ArchiveType::TarXz => self.extract_tar_xz(archive, dest)?,
+            ArchiveType::SevenZip => self.extract_7z(archive, dest)?,
+            ArchiveType::Rar => self.extract_rar(archive, dest)?,
         };
 
         info!(
@@ -223,6 +284,75 @@ impl Extractor {
         })
     }
 
+    fn extract_tar_bz2(&self, archive: &Path, dest: &Path) -> Result<ExtractionResult> {
+        let file = File::open(archive).map_err(|e| Error::io(archive, e))?;
+        let decoder = BzDecoder::new(file);
+        self.extract_tar_reader(decoder, dest)
+    }
+
+    fn extract_tar_xz(&self, archive: &Path, dest: &Path) -> Result<ExtractionResult> {
+        let file = File::open(archive).map_err(|e| Error::io(archive, e))?;
+        let decoder = XzDecoder::new(file);
+        self.extract_tar_reader(decoder, dest)
+    }
+
+    fn extract_7z(&self, archive: &Path, dest: &Path) -> Result<ExtractionResult> {
+        let cmd = find_7z_command().ok_or_else(|| {
+            Error::Archive("7z/7zz not found. Install p7zip or 7-zip.".to_string())
+        })?;
+
+        debug!(cmd = %cmd, archive = ?archive, dest = ?dest, "extracting 7z");
+
+        let output = Command::new(&cmd)
+            .arg("x") // Extract with full paths
+            .arg("-y") // Assume yes on all queries
+            .arg(format!("-o{}", dest.display())) // Output directory
+            .arg(archive)
+            .output()
+            .map_err(|e| Error::Archive(format!("failed to run {cmd}: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Archive(format!("7z extraction failed: {stderr}")));
+        }
+
+        // Count extracted files
+        let (files_extracted, total_size) = count_files_in_dir(dest);
+
+        Ok(ExtractionResult {
+            files_extracted,
+            total_size,
+            root_dir: find_root_dir(dest),
+        })
+    }
+
+    fn extract_rar(&self, archive: &Path, dest: &Path) -> Result<ExtractionResult> {
+        debug!(archive = ?archive, dest = ?dest, "extracting rar");
+
+        let output = Command::new("unrar")
+            .arg("x") // Extract with full paths
+            .arg("-y") // Assume yes on all queries
+            .arg("-o+") // Overwrite existing files
+            .arg(archive)
+            .arg(dest)
+            .output()
+            .map_err(|e| Error::Archive(format!("failed to run unrar: {e}")))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(Error::Archive(format!("unrar extraction failed: {stderr}")));
+        }
+
+        // Count extracted files
+        let (files_extracted, total_size) = count_files_in_dir(dest);
+
+        Ok(ExtractionResult {
+            files_extracted,
+            total_size,
+            root_dir: find_root_dir(dest),
+        })
+    }
+
     fn apply_strip_prefix(&self, path: &Path, dest: &Path) -> PathBuf {
         if let Some(n) = self.strip_prefix {
             let components: Vec<_> = path.components().skip(n).collect();
@@ -260,6 +390,70 @@ fn find_root_dir(dest: &Path) -> Option<PathBuf> {
     } else {
         None
     }
+}
+
+/// Count files and total size in a directory.
+fn count_files_in_dir(dir: &Path) -> (usize, u64) {
+    let mut count = 0;
+    let mut size = 0u64;
+
+    for entry in WalkDir::new(dir).min_depth(1) {
+        if let Ok(entry) = entry {
+            if entry.file_type().is_file() {
+                count += 1;
+                if let Ok(meta) = entry.metadata() {
+                    size += meta.len();
+                }
+            }
+        }
+    }
+
+    (count, size)
+}
+
+/// Check if 7z or 7zz command is available.
+#[must_use]
+pub fn is_7z_available() -> bool {
+    find_7z_command().is_some()
+}
+
+/// Find the 7z command (tries 7z, 7zz, 7za).
+fn find_7z_command() -> Option<&'static str> {
+    // Try different 7z command names
+    for cmd in &["7z", "7zz", "7za"] {
+        if Command::new(cmd)
+            .arg("--help")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return Some(*cmd);
+        }
+    }
+    None
+}
+
+/// Check if unrar command is available.
+#[must_use]
+pub fn is_unrar_available() -> bool {
+    Command::new("unrar")
+        .output()
+        .map(|o| o.status.success() || o.status.code() == Some(0) || o.status.code() == Some(7))
+        .unwrap_or(false)
+}
+
+/// Get a list of available archive tools.
+#[must_use]
+pub fn available_tools() -> Vec<(&'static str, bool)> {
+    vec![
+        ("zip", true),     // Always available (native)
+        ("tar", true),     // Always available (native)
+        ("tar.gz", true),  // Always available (native)
+        ("tar.bz2", true), // Always available (native)
+        ("tar.xz", true),  // Always available (native)
+        ("7z", is_7z_available()),
+        ("rar", is_unrar_available()),
+    ]
 }
 
 /// Create a ZIP archive.
@@ -328,12 +522,76 @@ mod tests {
             ArchiveType::from_filename("package.tar"),
             Some(ArchiveType::Tar)
         );
-        assert_eq!(ArchiveType::from_filename("package.rar"), None);
+        assert_eq!(
+            ArchiveType::from_filename("package.tar.bz2"),
+            Some(ArchiveType::TarBz2)
+        );
+        assert_eq!(
+            ArchiveType::from_filename("package.tbz2"),
+            Some(ArchiveType::TarBz2)
+        );
+        assert_eq!(
+            ArchiveType::from_filename("package.tar.xz"),
+            Some(ArchiveType::TarXz)
+        );
+        assert_eq!(
+            ArchiveType::from_filename("package.txz"),
+            Some(ArchiveType::TarXz)
+        );
+        assert_eq!(
+            ArchiveType::from_filename("package.7z"),
+            Some(ArchiveType::SevenZip)
+        );
+        assert_eq!(
+            ArchiveType::from_filename("package.rar"),
+            Some(ArchiveType::Rar)
+        );
+        assert_eq!(ArchiveType::from_filename("package.unknown"), None);
     }
 
     #[test]
     fn archive_extension() {
         assert_eq!(ArchiveType::Zip.extension(), "zip");
         assert_eq!(ArchiveType::TarGz.extension(), "tar.gz");
+        assert_eq!(ArchiveType::Tar.extension(), "tar");
+        assert_eq!(ArchiveType::TarBz2.extension(), "tar.bz2");
+        assert_eq!(ArchiveType::TarXz.extension(), "tar.xz");
+        assert_eq!(ArchiveType::SevenZip.extension(), "7z");
+        assert_eq!(ArchiveType::Rar.extension(), "rar");
+    }
+
+    #[test]
+    fn archive_requires_cli() {
+        assert!(!ArchiveType::Zip.requires_cli());
+        assert!(!ArchiveType::TarGz.requires_cli());
+        assert!(!ArchiveType::Tar.requires_cli());
+        assert!(!ArchiveType::TarBz2.requires_cli());
+        assert!(!ArchiveType::TarXz.requires_cli());
+        assert!(ArchiveType::SevenZip.requires_cli());
+        assert!(ArchiveType::Rar.requires_cli());
+    }
+
+    #[test]
+    fn available_tools_list() {
+        let tools = available_tools();
+        assert!(tools.len() >= 7);
+        // Native formats should always be available
+        assert!(tools.iter().any(|(name, avail)| *name == "zip" && *avail));
+        assert!(tools.iter().any(|(name, avail)| *name == "tar" && *avail));
+        assert!(
+            tools
+                .iter()
+                .any(|(name, avail)| *name == "tar.gz" && *avail)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|(name, avail)| *name == "tar.bz2" && *avail)
+        );
+        assert!(
+            tools
+                .iter()
+                .any(|(name, avail)| *name == "tar.xz" && *avail)
+        );
     }
 }

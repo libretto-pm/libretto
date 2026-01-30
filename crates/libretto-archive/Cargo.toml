@@ -22,3 +22,5 @@ flate2 = { workspace = true }
 tracing = { workspace = true }
 tempfile = { workspace = true }
 walkdir = { workspace = true }
+xz2 = "0.1"
+bzip2 = "0.4"

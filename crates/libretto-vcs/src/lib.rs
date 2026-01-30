@@ -150,6 +150,7 @@ pub mod git;
 pub mod hg;
 pub mod manager;
 pub mod parallel;
+pub mod perforce;
 pub mod svn;
 pub mod types;
 pub mod url;
@@ -167,6 +168,7 @@ pub use url::{GitHosting, GitProtocol, VcsUrl};
 // Re-export other VCS types
 pub use fossil::FossilRepository;
 pub use hg::HgRepository;
+pub use perforce::PerforceRepository;
 pub use svn::SvnRepository;
 
 #[cfg(test)]

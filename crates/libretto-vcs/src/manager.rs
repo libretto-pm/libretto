@@ -13,6 +13,7 @@ use crate::fossil::FossilRepository;
 use crate::git::GitRepository;
 use crate::hg::HgRepository;
 use crate::parallel::{BatchCloneBuilder, CloneRequest, ParallelCloneResult, ParallelCloner};
+use crate::perforce::PerforceRepository;
 use crate::svn::SvnRepository;
 use crate::types::{CloneOptions, CloneResult, RepoStatus, VcsRef, VcsType};
 use crate::url::VcsUrl;
@@ -134,6 +135,7 @@ impl VcsManager {
             VcsType::Svn => self.clone_svn(url, dest, reference),
             VcsType::Hg => self.clone_hg(url, dest, reference),
             VcsType::Fossil => self.clone_fossil(url, dest),
+            VcsType::Perforce => self.clone_perforce(url, dest, reference),
         }
     }
 
@@ -214,6 +216,25 @@ impl VcsManager {
         })
     }
 
+    /// Clone a Perforce depot.
+    fn clone_perforce(
+        &self,
+        url: &str,
+        dest: &Path,
+        reference: Option<&VcsRef>,
+    ) -> Result<CloneResult> {
+        let revision = reference.map(super::types::VcsRef::as_str);
+        let repo = PerforceRepository::clone(url, dest, revision)?;
+        let commit = repo.changelist()?;
+
+        Ok(CloneResult {
+            path: dest.to_path_buf(),
+            commit,
+            vcs_type: VcsType::Perforce,
+            reference: reference.cloned().unwrap_or_default(),
+        })
+    }
+
     /// Clone multiple repositories in parallel.
     ///
     /// # Errors
@@ -274,6 +295,10 @@ impl VcsManager {
                 let repo = FossilRepository::open(path)?;
                 Ok(Box::new(repo))
             }
+            VcsType::Perforce => {
+                let repo = PerforceRepository::open(path)?;
+                Ok(Box::new(repo))
+            }
         }
     }
 
@@ -298,6 +323,14 @@ impl VcsManager {
         // Check for Fossil
         if url_lower.contains("fossil") || url_lower.ends_with(".fossil") {
             return VcsType::Fossil;
+        }
+
+        // Check for Perforce
+        if url_lower.starts_with("p4://")
+            || url_lower.starts_with("//")
+            || url_lower.contains("perforce")
+        {
+            return VcsType::Perforce;
         }
 
         // Default to Git
@@ -359,6 +392,10 @@ impl VcsManager {
 
         if FossilRepository::is_available() {
             available.push(VcsType::Fossil);
+        }
+
+        if PerforceRepository::is_available() {
+            available.push(VcsType::Perforce);
         }
 
         available
@@ -568,6 +605,32 @@ impl Repository for FossilRepository {
     }
 }
 
+impl Repository for PerforceRepository {
+    fn path(&self) -> &Path {
+        Self::path(self)
+    }
+
+    fn vcs_type(&self) -> VcsType {
+        VcsType::Perforce
+    }
+
+    fn current_commit(&self) -> Result<String> {
+        self.changelist()
+    }
+
+    fn status(&self) -> Result<RepoStatus> {
+        Self::status(self)
+    }
+
+    fn is_dirty(&self) -> Result<bool> {
+        Self::is_dirty(self)
+    }
+
+    fn update(&self) -> Result<()> {
+        Self::update(self, None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -624,6 +687,19 @@ mod tests {
         let tools = manager.available_tools();
         // Git should almost always be available on development machines
         // but we don't assert it to avoid CI failures
-        assert!(tools.len() <= 4);
+        assert!(tools.len() <= 5);
+    }
+
+    #[test]
+    fn detect_vcs_type_perforce() {
+        let manager = VcsManager::new();
+        assert_eq!(
+            manager.detect_vcs_type("//depot/project/..."),
+            VcsType::Perforce
+        );
+        assert_eq!(
+            manager.detect_vcs_type("p4://server/depot/..."),
+            VcsType::Perforce
+        );
     }
 }
