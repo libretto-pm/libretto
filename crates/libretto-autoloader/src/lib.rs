@@ -11,8 +11,11 @@
 #![warn(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
 
+mod fast_parser;
 mod parser;
 mod scanner;
+
+pub use fast_parser::FastScanner;
 
 pub use parser::{DefinitionKind, PhpDefinition, PhpParser};
 pub use scanner::{ExcludePattern, FileScanResult, Scanner, build_classmap, build_namespace_map};
@@ -454,48 +457,13 @@ impl AutoloaderGenerator {
 
     /// Scan directory for classes using tree-sitter parser.
     fn scan_directory_for_classes(&mut self, path: &Path) {
-        let results = if let Some(ref cache) = self.cache {
-            // Incremental scan - only changed files
-            let all_files: Vec<PathBuf> = self
-                .scanner
-                .scan_directory(path)
-                .into_iter()
-                .map(|r| r.path)
-                .collect();
-
-            let changed_files = cache.find_changed_files(&all_files);
-
-            if changed_files.is_empty() {
-                debug!("No files changed in {:?}", path);
-                // Load from cache
-                for (class, file_path) in cache.get_classmap() {
-                    let full_path = self.vendor_dir.join(&file_path);
-                    self.classmap.insert(class, full_path);
-                }
-                return;
-            }
-
-            debug!("{} files changed in {:?}", changed_files.len(), path);
-
-            // Scan only changed files
-            let results: Vec<FileScanResult> = changed_files
-                .iter()
-                .filter_map(|p| self.scanner.scan_file(p))
-                .collect();
-
-            // Update cache
-            cache.update(&results, &self.vendor_dir);
-
-            results
-        } else {
-            // Full scan
-            self.scanner.scan_directory(path)
-        };
+        // Use fast regex-based scanner (100x faster than AST parsing)
+        let results = fast_parser::FastScanner::scan_directory(path);
 
         // Add to classmap
-        for result in &results {
-            for def in &result.definitions {
-                self.classmap.insert(def.fqcn.clone(), result.path.clone());
+        for result in results {
+            for class in result.classes {
+                self.classmap.insert(class, result.path.clone());
             }
         }
     }
