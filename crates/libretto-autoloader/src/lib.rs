@@ -20,12 +20,13 @@ pub use fast_parser::FastScanner;
 pub use parser::{DefinitionKind, PhpDefinition, PhpParser};
 pub use scanner::{ExcludePattern, FileScanResult, Scanner, build_classmap, build_namespace_map};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use libretto_core::{Error, Result};
 use parking_lot::RwLock;
+use rayon::prelude::*;
 use rkyv::{Archive, Deserialize, Serialize};
 use serde::{Deserialize as SerdeDeserialize, Serialize as SerdeSerialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -336,8 +337,8 @@ pub struct AutoloaderGenerator {
     vendor_dir: PathBuf,
     /// Optimization level.
     optimization_level: OptimizationLevel,
-    /// Generated classmap (class -> path).
-    classmap: AHashMap<String, PathBuf>,
+    /// Generated classmap (class -> path). Using `BTreeMap` for pre-sorted iteration.
+    classmap: BTreeMap<String, PathBuf>,
     /// PSR-4 namespace mappings.
     psr4_map: HashMap<String, Vec<PathBuf>>,
     /// PSR-0 namespace mappings.
@@ -348,6 +349,10 @@ pub struct AutoloaderGenerator {
     cache: Option<Arc<IncrementalCache>>,
     /// Scanner for PHP files.
     scanner: Scanner,
+    /// Pending directories to scan (collected during `add_package`, scanned in finalize).
+    pending_scan_dirs: Vec<PathBuf>,
+    /// Whether `finalize()` has been called.
+    finalized: bool,
 }
 
 impl AutoloaderGenerator {
@@ -357,12 +362,14 @@ impl AutoloaderGenerator {
         Self {
             vendor_dir,
             optimization_level: OptimizationLevel::None,
-            classmap: AHashMap::new(),
+            classmap: BTreeMap::new(),
             psr4_map: HashMap::new(),
             psr0_map: HashMap::new(),
             files: Vec::new(),
             cache: None,
             scanner: Scanner::without_exclusions(),
+            pending_scan_dirs: Vec::new(),
+            finalized: false,
         }
     }
 
@@ -389,10 +396,23 @@ impl AutoloaderGenerator {
     }
 
     /// Add autoload configuration from a package.
+    ///
+    /// This collects paths for scanning but doesn't scan immediately.
+    /// Call `finalize()` after all packages are added to perform the batch scan.
     pub fn add_package(&mut self, package_dir: &Path, config: &AutoloadConfig) {
         // Add PSR-4 mappings
         for (namespace, dirs) in &config.psr4.mappings {
             let paths: Vec<PathBuf> = dirs.iter().map(|d| package_dir.join(d)).collect();
+
+            // Queue PSR-4 paths for scanning if optimized
+            if self.optimization_level >= OptimizationLevel::Optimized {
+                for path in &paths {
+                    if path.exists() {
+                        self.pending_scan_dirs.push(path.clone());
+                    }
+                }
+            }
+
             self.psr4_map
                 .entry(namespace.clone())
                 .or_default()
@@ -402,47 +422,27 @@ impl AutoloaderGenerator {
         // Add PSR-0 mappings
         for (namespace, dirs) in &config.psr0.mappings {
             let paths: Vec<PathBuf> = dirs.iter().map(|d| package_dir.join(d)).collect();
+
+            // Queue PSR-0 paths for scanning if optimized
+            if self.optimization_level >= OptimizationLevel::Optimized {
+                for path in &paths {
+                    if path.exists() {
+                        self.pending_scan_dirs.push(path.clone());
+                    }
+                }
+            }
+
             self.psr0_map
                 .entry(namespace.clone())
                 .or_default()
                 .extend(paths);
         }
 
-        // Scan classmap directories based on optimization level
-        if self.optimization_level >= OptimizationLevel::Optimized {
-            // Collect paths first to avoid borrow issues
-            let psr4_paths: Vec<PathBuf> = self
-                .psr4_map
-                .values()
-                .flatten()
-                .filter(|p| p.exists())
-                .cloned()
-                .collect();
-
-            let psr0_paths: Vec<PathBuf> = self
-                .psr0_map
-                .values()
-                .flatten()
-                .filter(|p| p.exists())
-                .cloned()
-                .collect();
-
-            // Scan PSR-4 directories for classes
-            for path in psr4_paths {
-                self.scan_directory_for_classes(&path);
-            }
-
-            // Scan PSR-0 directories
-            for path in psr0_paths {
-                self.scan_directory_for_classes(&path);
-            }
-        }
-
-        // Always scan explicit classmap paths
+        // Always queue explicit classmap paths for scanning
         for path in &config.classmap.paths {
             let full_path = package_dir.join(path);
             if full_path.exists() {
-                self.scan_directory_for_classes(&full_path);
+                self.pending_scan_dirs.push(full_path);
             }
         }
 
@@ -455,36 +455,118 @@ impl AutoloaderGenerator {
         }
     }
 
-    /// Scan directory for classes using tree-sitter parser.
-    fn scan_directory_for_classes(&mut self, path: &Path) {
-        // Use fast regex-based scanner (100x faster than AST parsing)
-        let results = fast_parser::FastScanner::scan_directory(path);
+    /// Finalize package collection and perform batch scanning.
+    ///
+    /// This deduplicates directories and scans all of them in parallel.
+    /// Must be called before `generate()`.
+    pub fn finalize(&mut self) {
+        if self.finalized {
+            return;
+        }
+        self.finalized = true;
 
-        // Add to classmap
-        for result in results {
+        if self.pending_scan_dirs.is_empty() {
+            return;
+        }
+
+        // Deduplicate directories using canonical paths
+        let unique_dirs: Vec<PathBuf> = {
+            let mut seen = AHashSet::with_capacity(self.pending_scan_dirs.len());
+            self.pending_scan_dirs
+                .drain(..)
+                .filter(|path| {
+                    // Use canonical path for deduplication to handle symlinks
+                    let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+                    seen.insert(canonical)
+                })
+                .collect()
+        };
+
+        debug!(
+            "Scanning {} unique directories for classes",
+            unique_dirs.len()
+        );
+
+        // Scan all directories in parallel and collect results
+        let all_results: Vec<fast_parser::FastScanResult> = unique_dirs
+            .into_par_iter()
+            .flat_map(|dir| fast_parser::FastScanner::scan_directory(&dir))
+            .collect();
+
+        // Build classmap from results (BTreeMap is already sorted)
+        for result in all_results {
             for class in result.classes {
                 self.classmap.insert(class, result.path.clone());
             }
         }
+
+        debug!("Found {} classes", self.classmap.len());
     }
 
     /// Generate all autoloader files.
     ///
     /// # Errors
     /// Returns error if generation fails.
-    pub fn generate(&self) -> Result<()> {
+    pub fn generate(&mut self) -> Result<()> {
+        // Ensure finalize has been called
+        if !self.finalized {
+            self.finalize();
+        }
+
         let autoload_dir = self.vendor_dir.join("composer");
         std::fs::create_dir_all(&autoload_dir).map_err(|e| Error::io(&autoload_dir, e))?;
 
-        // Generate all PHP files
-        self.generate_classloader(&autoload_dir)?;
-        self.generate_autoload_real(&autoload_dir)?;
-        self.generate_autoload_static(&autoload_dir)?;
-        self.generate_autoload_psr4(&autoload_dir)?;
-        self.generate_autoload_classmap(&autoload_dir)?;
-        self.generate_autoload_files(&autoload_dir)?;
-        self.generate_autoload_namespaces(&autoload_dir)?;
-        self.generate_autoload(&self.vendor_dir)?;
+        // Pre-compute shared data for parallel generation
+        let hash = self.generate_hash();
+        let vendor_dir = self.vendor_dir.clone();
+
+        // Generate files in parallel where possible
+        // Group 1: Files that have no dependencies on each other
+        let classloader_content = include_str!("templates/ClassLoader.php").to_string();
+        let autoload_real_content = self.build_autoload_real(&hash);
+        let autoload_static_content = self.build_autoload_static(&hash);
+        let autoload_psr4_content = self.build_autoload_psr4();
+        let autoload_classmap_content = self.build_autoload_classmap();
+        let autoload_files_content = self.build_autoload_files();
+        let autoload_namespaces_content = self.build_autoload_namespaces();
+        let autoload_content = self.build_autoload(&hash);
+
+        // Write all files in parallel
+        let files_to_write: Vec<(PathBuf, String)> = vec![
+            (autoload_dir.join("ClassLoader.php"), classloader_content),
+            (
+                autoload_dir.join("autoload_real.php"),
+                autoload_real_content,
+            ),
+            (
+                autoload_dir.join("autoload_static.php"),
+                autoload_static_content,
+            ),
+            (
+                autoload_dir.join("autoload_psr4.php"),
+                autoload_psr4_content,
+            ),
+            (
+                autoload_dir.join("autoload_classmap.php"),
+                autoload_classmap_content,
+            ),
+            (
+                autoload_dir.join("autoload_files.php"),
+                autoload_files_content,
+            ),
+            (
+                autoload_dir.join("autoload_namespaces.php"),
+                autoload_namespaces_content,
+            ),
+            (vendor_dir.join("autoload.php"), autoload_content),
+        ];
+
+        // Write files in parallel
+        files_to_write
+            .into_par_iter()
+            .try_for_each(|(path, content)| {
+                std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+            })?;
 
         // Save cache if enabled
         if let Some(Err(e)) = self.cache.as_ref().map(|c| c.save()) {
@@ -503,24 +585,14 @@ impl AutoloaderGenerator {
         Ok(())
     }
 
-    /// Generate ClassLoader.php (Composer-compatible).
-    fn generate_classloader(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("ClassLoader.php");
-        let content = include_str!("templates/ClassLoader.php");
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
-    }
-
-    /// Generate `autoload_real.php`.
-    fn generate_autoload_real(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_real.php");
-        let hash = self.generate_hash();
-
+    /// Build `autoload_real.php` content.
+    fn build_autoload_real(&self, hash: &str) -> String {
         let authoritative_flag = match self.optimization_level {
             OptimizationLevel::Authoritative => "true",
             _ => "false",
         };
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_real.php @generated by Libretto
@@ -571,16 +643,11 @@ class ComposerAutoloaderInit{hash}
     }}
 }}
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate `autoload_static.php` with optimized data structures.
-    fn generate_autoload_static(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_static.php");
-        let hash = self.generate_hash();
-
+    /// Build `autoload_static.php` content with optimized data structures.
+    fn build_autoload_static(&self, hash: &str) -> String {
         // Build prefix lengths for PSR-4
         let mut prefix_lengths: HashMap<char, HashMap<&str, usize>> = HashMap::new();
         for namespace in self.psr4_map.keys() {
@@ -592,7 +659,9 @@ class ComposerAutoloaderInit{hash}
             }
         }
 
-        let mut prefix_lengths_php = String::from("array(\n");
+        // Pre-allocate with estimated capacity
+        let mut prefix_lengths_php = String::with_capacity(prefix_lengths.len() * 100);
+        prefix_lengths_php.push_str("array(\n");
         for (char, prefixes) in &prefix_lengths {
             prefix_lengths_php.push_str(&format!("        '{char}' => \n"));
             prefix_lengths_php.push_str("        array(\n");
@@ -604,8 +673,8 @@ class ComposerAutoloaderInit{hash}
         }
         prefix_lengths_php.push_str("    )");
 
-        // PSR-4 directories
-        let mut psr4_entries = String::new();
+        // PSR-4 directories - pre-allocate
+        let mut psr4_entries = String::with_capacity(self.psr4_map.len() * 200);
         for (namespace, paths) in &self.psr4_map {
             let escaped_ns = namespace.replace('\\', "\\\\");
             psr4_entries.push_str(&format!("        '{escaped_ns}' => array(\n"));
@@ -616,12 +685,10 @@ class ComposerAutoloaderInit{hash}
             psr4_entries.push_str("        ),\n");
         }
 
-        // Classmap entries
-        let mut classmap_entries = String::new();
-        let mut sorted_classes: Vec<_> = self.classmap.iter().collect();
-        sorted_classes.sort_by(|a, b| a.0.cmp(b.0));
-
-        for (class, file_path) in sorted_classes {
+        // Classmap entries - BTreeMap is already sorted, no need to sort again
+        // Pre-allocate with estimated 80 bytes per entry
+        let mut classmap_entries = String::with_capacity(self.classmap.len() * 80);
+        for (class, file_path) in &self.classmap {
             let escaped_class = class.replace('\\', "\\\\");
             let relative = self.make_relative_path(file_path);
             classmap_entries.push_str(&format!(
@@ -630,7 +697,7 @@ class ComposerAutoloaderInit{hash}
         }
 
         // Files entries with deterministic identifiers
-        let mut files_entries = String::new();
+        let mut files_entries = String::with_capacity(self.files.len() * 100);
         for file_path in &self.files {
             let relative = self.make_relative_path(file_path);
             let identifier = self.generate_file_identifier(&relative);
@@ -639,7 +706,7 @@ class ComposerAutoloaderInit{hash}
             ));
         }
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_static.php @generated by Libretto
@@ -670,16 +737,12 @@ class ComposerStaticInit{hash}
     }}
 }}
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate `autoload_psr4.php`.
-    fn generate_autoload_psr4(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_psr4.php");
-
-        let mut entries = String::new();
+    /// Build `autoload_psr4.php` content.
+    fn build_autoload_psr4(&self) -> String {
+        let mut entries = String::with_capacity(self.psr4_map.len() * 150);
         for (namespace, paths) in &self.psr4_map {
             let escaped_ns = namespace.replace('\\', "\\\\");
             entries.push_str(&format!("    '{escaped_ns}' => array(\n"));
@@ -690,7 +753,7 @@ class ComposerStaticInit{hash}
             entries.push_str("    ),\n");
         }
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_psr4.php @generated by Libretto
@@ -701,20 +764,14 @@ $baseDir = dirname($vendorDir);
 return array(
 {entries});
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate `autoload_classmap.php`.
-    fn generate_autoload_classmap(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_classmap.php");
-
-        let mut entries = String::new();
-        let mut sorted_classes: Vec<_> = self.classmap.iter().collect();
-        sorted_classes.sort_by(|a, b| a.0.cmp(b.0));
-
-        for (class, file_path) in sorted_classes {
+    /// Build `autoload_classmap.php` content.
+    fn build_autoload_classmap(&self) -> String {
+        // BTreeMap is already sorted, no need to sort again
+        let mut entries = String::with_capacity(self.classmap.len() * 60);
+        for (class, file_path) in &self.classmap {
             let escaped_class = class.replace('\\', "\\\\");
             let relative = self.make_relative_path(file_path);
             entries.push_str(&format!(
@@ -722,7 +779,7 @@ return array(
             ));
         }
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_classmap.php @generated by Libretto
@@ -733,16 +790,12 @@ $baseDir = dirname($vendorDir);
 return array(
 {entries});
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate `autoload_files.php`.
-    fn generate_autoload_files(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_files.php");
-
-        let mut entries = String::new();
+    /// Build `autoload_files.php` content.
+    fn build_autoload_files(&self) -> String {
+        let mut entries = String::with_capacity(self.files.len() * 80);
         for file_path in &self.files {
             let relative = self.make_relative_path(file_path);
             let identifier = self.generate_file_identifier(&relative);
@@ -751,7 +804,7 @@ return array(
             ));
         }
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_files.php @generated by Libretto
@@ -762,16 +815,12 @@ $baseDir = dirname($vendorDir);
 return array(
 {entries});
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate `autoload_namespaces.php` (for PSR-0).
-    fn generate_autoload_namespaces(&self, dir: &Path) -> Result<()> {
-        let path = dir.join("autoload_namespaces.php");
-
-        let mut entries = String::new();
+    /// Build `autoload_namespaces.php` content (for PSR-0).
+    fn build_autoload_namespaces(&self) -> String {
+        let mut entries = String::with_capacity(self.psr0_map.len() * 150);
         for (namespace, paths) in &self.psr0_map {
             let escaped_ns = namespace.replace('\\', "\\\\");
             entries.push_str(&format!("    '{escaped_ns}' => array(\n"));
@@ -782,7 +831,7 @@ return array(
             entries.push_str("    ),\n");
         }
 
-        let content = format!(
+        format!(
             r"<?php
 
 // autoload_namespaces.php @generated by Libretto
@@ -793,17 +842,12 @@ $baseDir = dirname($vendorDir);
 return array(
 {entries});
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
-    /// Generate main autoload.php.
-    fn generate_autoload(&self, vendor_dir: &Path) -> Result<()> {
-        let path = vendor_dir.join("autoload.php");
-        let hash = self.generate_hash();
-
-        let content = format!(
+    /// Build main autoload.php content.
+    fn build_autoload(&self, hash: &str) -> String {
+        format!(
             r"<?php
 
 // autoload.php @generated by Libretto
@@ -817,9 +861,7 @@ require_once __DIR__ . '/composer/autoload_real.php';
 
 return ComposerAutoloaderInit{hash}::getLoader();
 "
-        );
-
-        std::fs::write(&path, content).map_err(|e| Error::io(&path, e))
+        )
     }
 
     /// Make path relative to vendor directory.
@@ -829,14 +871,13 @@ return ComposerAutoloaderInit{hash}::getLoader();
             let path_str = relative.to_string_lossy().replace('\\', "/");
             if path_str.starts_with('/') {
                 return path_str;
-            } else {
-                return format!("/{path_str}");
             }
+            return format!("/{path_str}");
         }
 
         // Path is outside vendor dir (e.g., root project's app/ directory)
         // Make it relative to vendor's parent (project root)
-        let vendor_parent = self.vendor_dir.parent().unwrap_or(Path::new("."));
+        let vendor_parent = self.vendor_dir.parent().unwrap_or_else(|| Path::new("."));
         if let Ok(relative) = path.strip_prefix(vendor_parent) {
             let path_str = relative.to_string_lossy().replace('\\', "/");
             // Clean up leading ./ or just .
