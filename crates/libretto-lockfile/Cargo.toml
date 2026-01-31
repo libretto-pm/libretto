@@ -29,6 +29,7 @@ digest = { workspace = true }
 parking_lot = { workspace = true }
 dashmap = { workspace = true }
 rayon = { workspace = true }
+moka = { workspace = true }
 
 # Fast hash maps
 ahash = { workspace = true }

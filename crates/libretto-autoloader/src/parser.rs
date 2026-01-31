@@ -1,10 +1,14 @@
-//! Ultra-fast PHP parser using tree-sitter-php.
+//! Ultra-fast PHP parser using mago-syntax.
 //!
 //! Extracts class, interface, trait, and enum definitions with their namespaces.
+//! Uses mago-syntax for faster, more accurate parsing than tree-sitter-php.
 
+use bumpalo::Bump;
+use mago_database::file::FileId;
+use mago_span::HasSpan;
+use mago_syntax::ast::{Namespace, NamespaceBody, Statement};
+use mago_syntax::parser::parse_file_content;
 use std::path::Path;
-use streaming_iterator::StreamingIterator;
-use tree_sitter::{Parser, Query, QueryCursor};
 
 /// PHP definition type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -47,156 +51,163 @@ pub struct PhpDefinition {
     pub line: usize,
 }
 
-/// PHP file parser using tree-sitter.
+/// PHP file parser using mago-syntax.
+///
+/// mago-syntax is faster and more accurate than tree-sitter-php.
+#[derive(Debug, Default)]
 pub struct PhpParser {
-    parser: Parser,
-    query: Query,
-}
-
-impl std::fmt::Debug for PhpParser {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PhpParser").finish_non_exhaustive()
-    }
+    // mago-syntax uses arena allocation, so we don't need to store state here
+    _private: (),
 }
 
 impl PhpParser {
     /// Create a new PHP parser.
-    ///
-    /// # Panics
-    /// Panics if tree-sitter-php cannot be initialized.
     #[must_use]
     pub fn new() -> Self {
-        let language = tree_sitter_php::LANGUAGE_PHP;
-
-        let mut parser = Parser::new();
-        parser
-            .set_language(&language.into())
-            .expect("Failed to set PHP language");
-
-        // Query to find namespace, class, interface, trait, and enum declarations
-        let query_source = r"
-            (namespace_definition
-                name: (namespace_name) @namespace)
-
-            (class_declaration
-                name: (name) @class.name) @class
-
-            (interface_declaration
-                name: (name) @interface.name) @interface
-
-            (trait_declaration
-                name: (name) @trait.name) @trait
-
-            (enum_declaration
-                name: (name) @enum.name) @enum
-        ";
-
-        let query =
-            Query::new(&language.into(), query_source).expect("Failed to create tree-sitter query");
-
-        Self { parser, query }
+        Self { _private: () }
     }
 
     /// Parse a PHP file and extract definitions.
     ///
     /// # Errors
-    /// Returns error if file cannot be read or parsed.
+    /// Returns error if file cannot be read.
     pub fn parse_file(&mut self, path: &Path) -> std::io::Result<Vec<PhpDefinition>> {
-        let content = std::fs::read(path)?;
-        Ok(self.parse_bytes(&content))
+        let content = std::fs::read_to_string(path)?;
+        Ok(self.parse_str(&content))
     }
 
     /// Parse PHP content from bytes.
     #[must_use]
     pub fn parse_bytes(&mut self, content: &[u8]) -> Vec<PhpDefinition> {
-        let Some(tree) = self.parser.parse(content, None) else {
-            return Vec::new();
-        };
+        match std::str::from_utf8(content) {
+            Ok(s) => self.parse_str(s),
+            Err(_) => Vec::new(),
+        }
+    }
 
-        let root = tree.root_node();
-        let mut cursor = QueryCursor::new();
+    /// Parse content as string.
+    #[must_use]
+    pub fn parse_str(&mut self, content: &str) -> Vec<PhpDefinition> {
+        let arena = Bump::new();
+        let file_id = FileId::zero(); // Use dummy/zero file ID for standalone parsing
+
+        // Parse the PHP content
+        // API: (program, Option<error>) - will change in 1.4.0 to just program with program.errors
+        let (program, _error) = parse_file_content(&arena, file_id, content);
 
         let mut definitions = Vec::new();
         let mut current_namespace: Option<String> = None;
 
-        // Get capture indices
-        let namespace_idx = self
-            .query
-            .capture_index_for_name("namespace")
-            .unwrap_or(u32::MAX);
-        let class_name_idx = self
-            .query
-            .capture_index_for_name("class.name")
-            .unwrap_or(u32::MAX);
-        let interface_name_idx = self
-            .query
-            .capture_index_for_name("interface.name")
-            .unwrap_or(u32::MAX);
-        let trait_name_idx = self
-            .query
-            .capture_index_for_name("trait.name")
-            .unwrap_or(u32::MAX);
-        let enum_name_idx = self
-            .query
-            .capture_index_for_name("enum.name")
-            .unwrap_or(u32::MAX);
-
-        // Use captures() with StreamingIterator
-        let mut captures = cursor.captures(&self.query, root, content);
-        while let Some((m, _)) = captures.next() {
-            for capture in m.captures {
-                let node = capture.node;
-                let text: &str = match node.utf8_text(content) {
-                    Ok(t) => t,
-                    Err(_) => continue,
-                };
-
-                if capture.index == namespace_idx {
-                    current_namespace = Some(text.to_string());
-                } else {
-                    let (kind, is_name) = if capture.index == class_name_idx {
-                        (DefinitionKind::Class, true)
-                    } else if capture.index == interface_name_idx {
-                        (DefinitionKind::Interface, true)
-                    } else if capture.index == trait_name_idx {
-                        (DefinitionKind::Trait, true)
-                    } else if capture.index == enum_name_idx {
-                        (DefinitionKind::Enum, true)
-                    } else {
-                        continue;
-                    };
-
-                    if is_name {
-                        let name = text.to_string();
-                        let fqcn = current_namespace
-                            .as_ref()
-                            .map_or_else(|| name.clone(), |ns| format!("{ns}\\{name}"));
-
-                        definitions.push(PhpDefinition {
-                            fqcn,
-                            name,
-                            namespace: current_namespace.clone(),
-                            kind,
-                            line: node.start_position().row + 1,
-                        });
-                    }
-                }
-            }
+        // Process top-level statements
+        for statement in &program.statements {
+            self.process_statement(statement, &mut current_namespace, &mut definitions, content);
         }
 
         definitions
     }
 
-    /// Parse content as string (convenience method).
-    #[must_use]
-    pub fn parse_str(&mut self, content: &str) -> Vec<PhpDefinition> {
-        self.parse_bytes(content.as_bytes())
+    /// Process a single statement, extracting definitions.
+    fn process_statement(
+        &self,
+        statement: &Statement<'_>,
+        current_namespace: &mut Option<String>,
+        definitions: &mut Vec<PhpDefinition>,
+        source: &str,
+    ) {
+        match statement {
+            Statement::Namespace(ns) => {
+                self.process_namespace(ns, current_namespace, definitions, source);
+            }
+            Statement::Class(class) => {
+                let name = class.name.value.to_string();
+                let line = self.get_line_number(class.span().start.offset as usize, source);
+                definitions.push(PhpDefinition {
+                    fqcn: self.make_fqcn(current_namespace.as_deref(), &name),
+                    name,
+                    namespace: current_namespace.clone(),
+                    kind: DefinitionKind::Class,
+                    line,
+                });
+            }
+            Statement::Interface(interface) => {
+                let name = interface.name.value.to_string();
+                let line = self.get_line_number(interface.span().start.offset as usize, source);
+                definitions.push(PhpDefinition {
+                    fqcn: self.make_fqcn(current_namespace.as_deref(), &name),
+                    name,
+                    namespace: current_namespace.clone(),
+                    kind: DefinitionKind::Interface,
+                    line,
+                });
+            }
+            Statement::Trait(tr) => {
+                let name = tr.name.value.to_string();
+                let line = self.get_line_number(tr.span().start.offset as usize, source);
+                definitions.push(PhpDefinition {
+                    fqcn: self.make_fqcn(current_namespace.as_deref(), &name),
+                    name,
+                    namespace: current_namespace.clone(),
+                    kind: DefinitionKind::Trait,
+                    line,
+                });
+            }
+            Statement::Enum(en) => {
+                let name = en.name.value.to_string();
+                let line = self.get_line_number(en.span().start.offset as usize, source);
+                definitions.push(PhpDefinition {
+                    fqcn: self.make_fqcn(current_namespace.as_deref(), &name),
+                    name,
+                    namespace: current_namespace.clone(),
+                    kind: DefinitionKind::Enum,
+                    line,
+                });
+            }
+            // Other statements don't contain class-like definitions at top level
+            _ => {}
+        }
     }
-}
 
-impl Default for PhpParser {
-    fn default() -> Self {
-        Self::new()
+    /// Process a namespace statement.
+    fn process_namespace(
+        &self,
+        ns: &Namespace<'_>,
+        current_namespace: &mut Option<String>,
+        definitions: &mut Vec<PhpDefinition>,
+        source: &str,
+    ) {
+        // Update current namespace
+        *current_namespace = ns.name.as_ref().map(|id| id.value().to_string());
+
+        // Process statements inside the namespace
+        match &ns.body {
+            NamespaceBody::Implicit(body) => {
+                for stmt in &body.statements {
+                    self.process_statement(stmt, current_namespace, definitions, source);
+                }
+            }
+            NamespaceBody::BraceDelimited(block) => {
+                for stmt in &block.statements {
+                    self.process_statement(stmt, current_namespace, definitions, source);
+                }
+            }
+        }
+    }
+
+    /// Build a fully qualified class name.
+    fn make_fqcn(&self, namespace: Option<&str>, name: &str) -> String {
+        match namespace {
+            Some(ns) => format!("{ns}\\{name}"),
+            None => name.to_string(),
+        }
+    }
+
+    /// Get line number from byte offset.
+    fn get_line_number(&self, offset: usize, source: &str) -> usize {
+        source[..offset.min(source.len())]
+            .bytes()
+            .filter(|&b| b == b'\n')
+            .count()
+            + 1
     }
 }
 
@@ -320,5 +331,24 @@ class GlobalClass {
         assert_eq!(defs.len(), 1);
         assert_eq!(defs[0].fqcn, "GlobalClass");
         assert!(defs[0].namespace.is_none());
+    }
+
+    #[test]
+    fn parse_braced_namespace() {
+        let mut parser = PhpParser::new();
+        let content = r"<?php
+namespace App\Services {
+    class UserService {}
+}
+
+namespace App\Repositories {
+    class UserRepository {}
+}
+";
+
+        let defs = parser.parse_str(content);
+        assert_eq!(defs.len(), 2);
+        assert_eq!(defs[0].fqcn, "App\\Services\\UserService");
+        assert_eq!(defs[1].fqcn, "App\\Repositories\\UserRepository");
     }
 }

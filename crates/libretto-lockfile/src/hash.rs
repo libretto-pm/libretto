@@ -4,13 +4,38 @@
 //! - MD5 for Composer content-hash compatibility
 //! - BLAKE3 for fast integrity verification (SIMD-accelerated)
 //! - Parallel hashing for large files
+//! - In-memory caching with moka for computed hashes
 
 use blake3::Hasher as Blake3Hasher;
 use digest::Digest;
 use md5::Md5;
+use moka::sync::Cache;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::sync::LazyLock;
+use std::time::Duration;
+
+/// Global cache for computed content hashes (MD5).
+/// Keyed by a hash of the input data to avoid storing large keys.
+static CONTENT_HASH_CACHE: LazyLock<Cache<u64, String>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(10_000)
+        .time_to_live(Duration::from_secs(3600)) // 1 hour TTL
+        .build()
+});
+
+/// Global cache for computed integrity hashes (BLAKE3).
+/// Keyed by a hash of the input data.
+static INTEGRITY_HASH_CACHE: LazyLock<Cache<u64, [u8; 32]>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(10_000)
+        .time_to_live(Duration::from_secs(3600)) // 1 hour TTL
+        .build()
+});
+
+/// Threshold for using parallel BLAKE3 hashing (64KB).
+const PARALLEL_HASH_THRESHOLD: usize = 64 * 1024;
 
 /// Content hash for composer.json dependencies.
 ///
@@ -109,6 +134,94 @@ impl ContentHasher {
         hasher.update(json.as_bytes());
         hasher.finalize()
     }
+
+    /// Compute content-hash with caching.
+    ///
+    /// Uses an in-memory cache to avoid recomputing hashes for the same input.
+    /// The cache key is a fast hash of the input parameters.
+    #[must_use]
+    pub fn compute_content_hash_cached(
+        require: &BTreeMap<String, String>,
+        require_dev: &BTreeMap<String, String>,
+        minimum_stability: Option<&str>,
+        prefer_stable: Option<bool>,
+        prefer_lowest: Option<bool>,
+        platform: &BTreeMap<String, String>,
+        platform_overrides: &BTreeMap<String, String>,
+    ) -> String {
+        // Build a cache key from the input
+        let cache_key = Self::build_cache_key(
+            require,
+            require_dev,
+            minimum_stability,
+            prefer_stable,
+            prefer_lowest,
+            platform,
+            platform_overrides,
+        );
+
+        // Check cache first
+        if let Some(cached) = CONTENT_HASH_CACHE.get(&cache_key) {
+            return cached;
+        }
+
+        // Compute the hash
+        let hash = Self::compute_content_hash(
+            require,
+            require_dev,
+            minimum_stability,
+            prefer_stable,
+            prefer_lowest,
+            platform,
+            platform_overrides,
+        );
+
+        // Store in cache
+        CONTENT_HASH_CACHE.insert(cache_key, hash.clone());
+
+        hash
+    }
+
+    /// Build a fast cache key from input parameters using BLAKE3.
+    fn build_cache_key(
+        require: &BTreeMap<String, String>,
+        require_dev: &BTreeMap<String, String>,
+        minimum_stability: Option<&str>,
+        prefer_stable: Option<bool>,
+        prefer_lowest: Option<bool>,
+        platform: &BTreeMap<String, String>,
+        platform_overrides: &BTreeMap<String, String>,
+    ) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = ahash::AHasher::default();
+
+        for (k, v) in require {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        for (k, v) in require_dev {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        minimum_stability.hash(&mut hasher);
+        prefer_stable.hash(&mut hasher);
+        prefer_lowest.hash(&mut hasher);
+        for (k, v) in platform {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+        for (k, v) in platform_overrides {
+            k.hash(&mut hasher);
+            v.hash(&mut hasher);
+        }
+
+        hasher.finish()
+    }
+
+    /// Clear the content hash cache.
+    pub fn clear_cache() {
+        CONTENT_HASH_CACHE.invalidate_all();
+    }
 }
 
 /// Convert `BTreeMap` to minimal JSON.
@@ -184,18 +297,57 @@ impl IntegrityHasher {
     }
 
     /// Hash bytes directly.
+    ///
+    /// For data larger than 64KB, uses BLAKE3's parallel Rayon-based hashing
+    /// for maximum throughput on multi-core systems.
     #[must_use]
     pub fn hash_bytes(data: &[u8]) -> [u8; 32] {
-        *blake3::hash(data).as_bytes()
+        if data.len() >= PARALLEL_HASH_THRESHOLD {
+            // Use BLAKE3's built-in parallel hashing via Rayon
+            let mut hasher = Blake3Hasher::new();
+            hasher.update_rayon(data);
+            *hasher.finalize().as_bytes()
+        } else {
+            *blake3::hash(data).as_bytes()
+        }
+    }
+
+    /// Hash bytes with caching.
+    ///
+    /// Uses an in-memory cache to avoid recomputing hashes for the same data.
+    /// Ideal for scenarios where the same data may be hashed multiple times.
+    #[must_use]
+    pub fn hash_bytes_cached(data: &[u8]) -> [u8; 32] {
+        // Use ahash for fast cache key generation
+        let cache_key = ahash::RandomState::with_seeds(0, 0, 0, 0).hash_one(data);
+
+        // Check cache first
+        if let Some(cached) = INTEGRITY_HASH_CACHE.get(&cache_key) {
+            return cached;
+        }
+
+        // Compute the hash
+        let hash = Self::hash_bytes(data);
+
+        // Store in cache
+        INTEGRITY_HASH_CACHE.insert(cache_key, hash);
+
+        hash
     }
 
     /// Hash bytes to hex string.
     #[must_use]
     pub fn hash_bytes_hex(data: &[u8]) -> String {
-        bytes_to_hex(blake3::hash(data).as_bytes())
+        bytes_to_hex(&Self::hash_bytes(data))
     }
 
-    /// Hash a file using memory-mapped I/O for large files.
+    /// Hash bytes to hex string with caching.
+    #[must_use]
+    pub fn hash_bytes_hex_cached(data: &[u8]) -> String {
+        bytes_to_hex(&Self::hash_bytes_cached(data))
+    }
+
+    /// Hash a file using memory-mapped I/O and parallel hashing for large files.
     ///
     /// # Errors
     /// Returns I/O error if file cannot be read.
@@ -213,6 +365,7 @@ impl IntegrityHasher {
         // SAFETY: The file is opened read-only and we don't modify it
         if len > 1024 * 1024 {
             let mmap = unsafe { memmap2::Mmap::map(&file)? };
+            // Use parallel hashing for large memory-mapped files
             Ok(Self::hash_bytes(&mmap))
         } else {
             // Small files: buffered read
@@ -228,6 +381,11 @@ impl IntegrityHasher {
             }
             Ok(hasher.finalize())
         }
+    }
+
+    /// Clear the integrity hash cache.
+    pub fn clear_cache() {
+        INTEGRITY_HASH_CACHE.invalidate_all();
     }
 }
 

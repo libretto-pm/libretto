@@ -35,10 +35,12 @@ memmap2 = { workspace = true }
 # Parallelism
 rayon = { workspace = true }
 
-# PHP parsing
-tree-sitter = { workspace = true }
-tree-sitter-php = { workspace = true }
-streaming-iterator = "0.1"
+# PHP parsing (mago-syntax is faster than tree-sitter-php)
+# Pin to 1.3.0 - API will change in 1.4.0: (program, Option<error>) -> program with program.errors
+mago-syntax = "=1.3.0"
+mago-span = "=1.3.0"
+mago-database = "=1.3.0"
+bumpalo = "3"
 
 # Fast hashing
 blake3 = { workspace = true }

@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -69,7 +69,7 @@ rkyv = { version = "0.8", default-features = true }
 
 # Fast hashing
 ahash = "0.8"
-blake3 = "1.5"
+blake3 = { version = "1.5", features = ["rayon"] }
 
 # Error handling
 thiserror = "2.0"

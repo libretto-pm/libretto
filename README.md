@@ -1,7 +1,7 @@
 # Libretto
 
 <p align="center">
-  <strong>A blazingly fast, Composer-compatible package manager for PHP — written in Rust</strong>
+  <strong>A fast PHP package manager written in Rust</strong>
 </p>
 
 <p align="center">
@@ -10,26 +10,50 @@
   <a href="https://github.com/libretto-pm/libretto"><img src="https://img.shields.io/badge/rust-1.89%2B-orange.svg" alt="Rust Version"></a>
 </p>
 
+> **Status: Alpha** - This project is experimental. Use in production at your own risk.
+
 ---
 
-## Overview
+## What is Libretto?
 
-Libretto is a high-performance drop-in replacement for [Composer](https://getcomposer.org/), the PHP dependency manager. Built from the ground up in Rust, it leverages modern techniques like parallel downloads, SIMD-accelerated operations, and intelligent caching to dramatically speed up your PHP dependency management workflow.
+Libretto is a PHP package manager written in Rust that can read `composer.json` and `composer.lock` files. It aims to provide faster dependency installation through parallel downloads, content-addressable caching, and native performance.
 
-### Key Features
+### What Libretto Is
 
-- 🚀 **Blazingly Fast** — Parallel HTTP/2 downloads, SIMD-accelerated JSON parsing, and zero-copy deserialization
-- 📦 **Composer Compatible** — Works with your existing `composer.json` and `composer.lock` files
-- 🔒 **Secure** — Built-in security auditing, integrity verification, and pure-Rust TLS
-- 🌍 **Cross-Platform** — Native binaries for Linux, macOS, and Windows (x86_64 and ARM64)
-- 💾 **Smart Caching** — Multi-tier content-addressable cache with zstd compression
-- 🧩 **Modern Resolver** — PubGrub-based dependency resolution with clear conflict explanations
+- A fast alternative for installing PHP dependencies
+- Compatible with Composer's file formats (`composer.json`, `composer.lock`)
+- Useful for CI pipelines, Docker builds, and scenarios where install speed matters
+- A native binary with no PHP runtime required for the install step
+
+### What Libretto Is NOT
+
+- **Not a drop-in replacement for Composer** - Composer plugins are PHP code and cannot run natively in Rust
+- **Not feature-complete** - Many Composer features are missing or simplified
+- **Not production-ready** - This is alpha software
+
+## Why Libretto?
+
+| Use Case | Benefit |
+|----------|---------|
+| CI/CD pipelines | Faster builds, no PHP needed for install step |
+| Docker builds | Smaller images (no Composer), faster layer caching |
+| Monorepos | Parallel downloads scale better with large dependency trees |
+| Development | Content-addressable cache means instant installs on cache hit |
+
+### Honest Assessment
+
+The [mago](https://github.com/carthage-software/mago) author makes a fair point: Composer runs maybe 1-5 times per day locally. Saving 2 seconds per run isn't life-changing compared to tools like static analyzers or formatters that run 100+ times daily.
+
+Where Libretto provides real value:
+- **CI pipelines** - Dozens of builds per day, each running `install`
+- **Cold starts** - Docker builds, new developer onboarding, ephemeral environments
+- **Large projects** - More dependencies = more benefit from parallelism
 
 ## Installation
 
 ### Pre-built Binaries
 
-Download the latest release for your platform from the [Releases](https://github.com/libretto-pm/libretto/releases) page.
+Download from the [Releases](https://github.com/libretto-pm/libretto/releases) page.
 
 ### Build from Source
 
@@ -39,246 +63,161 @@ Requires Rust 1.89 or later:
 git clone https://github.com/libretto-pm/libretto.git
 cd libretto
 cargo build --release
+# Binary at target/release/libretto
 ```
-
-The binary will be available at `target/release/libretto`.
 
 ## Usage
 
-Libretto provides familiar Composer-compatible commands:
-
 ```bash
-# Install dependencies from composer.json
+# Install dependencies
 libretto install
 
-# Update all dependencies
+# Update dependencies
 libretto update
 
-# Add a new package
+# Add a package
 libretto require vendor/package
-
-# Add a dev dependency
-libretto require --dev vendor/package
 
 # Remove a package
 libretto remove vendor/package
 
-# Search for packages
-libretto search "search term"
-
-# Show package information
-libretto show vendor/package
-
-# Initialize a new project
-libretto init
-
-# Validate composer.json
-libretto validate
+# Security audit
+libretto audit
 
 # Regenerate autoloader
 libretto dump-autoload
 
-# Check for security vulnerabilities
-libretto audit
-
-# Clear the cache
+# Other commands
+libretto search "term"
+libretto show vendor/package
+libretto validate
+libretto init
 libretto cache:clear
 ```
 
-### Global Options
+## How It Works
 
-```bash
--v, --verbose       Enable verbose output
--d, --working-dir   Set the working directory
-    --no-ansi       Disable ANSI colors
--h, --help          Print help
--V, --version       Print version
-```
+### Performance Techniques
 
-## Performance
-
-Libretto achieves its performance through several techniques:
-
-| Feature | Technology |
-|---------|------------|
-| JSON Parsing | `sonic-rs` with SIMD acceleration |
-| HTTP Client | `reqwest` with HTTP/2 multiplexing |
-| Hashing | BLAKE3 with SIMD (SSE4.2/AVX2/NEON) |
-| Caching | Multi-tier with `moka` + zstd compression |
-| Parallelism | `tokio` async + `rayon` work-stealing |
-| Memory | `mimalloc` allocator + zero-copy with `rkyv` |
+| Feature | Implementation |
+|---------|----------------|
+| JSON parsing | `sonic-rs` with SIMD (SSE4.2/AVX2/NEON) |
+| HTTP | HTTP/2 multiplexing, adaptive concurrency |
+| Hashing | BLAKE3 with SIMD acceleration |
+| Caching | Content-addressable storage with hardlinks |
 | Resolution | PubGrub algorithm (from `uv` project) |
+| Autoloader | mago-syntax for fast, accurate PHP parsing (~7x faster than tree-sitter) |
 
-## Architecture
+### Content-Addressable Cache
 
-Libretto is organized as a Cargo workspace with modular crates:
+Like pnpm, Libretto stores packages once globally:
 
 ```
-crates/
-├── libretto-cli          # Command-line interface
-├── libretto-core         # Core types and utilities
-├── libretto-platform     # Cross-platform compatibility layer
-├── libretto-cache        # Multi-tier caching system
-├── libretto-repository   # Package repository clients
-├── libretto-resolver     # PubGrub dependency resolution
-├── libretto-downloader   # Parallel package downloading
-├── libretto-archive      # ZIP/TAR extraction
-├── libretto-vcs          # Git operations
-├── libretto-autoloader   # PHP autoloader generation
-├── libretto-plugin-system# Composer plugin compatibility
-├── libretto-audit        # Security vulnerability checking
-└── libretto-lockfile     # Atomic lockfile management
+~/.libretto/cache/cas/
+├── ab/cdef1234...  # Package contents by hash
+├── 12/3456abcd...
+└── ...
 ```
 
-## Composer Script Compatibility
+On cache hit, installation is just creating hardlinks - essentially instant.
 
-Libretto provides **full compatibility** with Composer lifecycle scripts. You don't need to change anything in your projects - scripts work exactly as they do with Composer.
+### Autoloader Generation
 
-### How It Works
+Libretto uses [mago-syntax](https://github.com/carthage-software/mago) to scan PHP files for classes, interfaces, traits, and enums. This provides:
 
-| Script Type | Handling |
-|-------------|----------|
-| Shell commands | Executed directly (`echo`, `php artisan`, etc.) |
-| `@php` directives | Executed via PHP binary |
-| `@composer` directives | Executed via Libretto |
-| `@putenv` directives | Sets environment variables |
-| PHP class callbacks | Full Composer Event API support |
+- **~7x faster** parsing than tree-sitter-php
+- Parallel file scanning with rayon
+- Incremental updates via mtime + content hash tracking
+- PSR-4, PSR-0, classmap, and files autoloading
 
-### Full Composer Event API
+## Limitations
 
-Composer scripts can reference PHP static methods like `Illuminate\Foundation\ComposerScripts::postAutoloadDump`. These require a `Composer\Script\Event` object with access to:
+### No Plugin Support
 
-- `$event->getComposer()` - Composer instance
-- `$event->getIO()` - Console I/O interface
-- `$event->isDevMode()` - Development mode flag
-- `$event->getComposer()->getConfig()->get('vendor-dir')` - Configuration values
+Composer plugins are PHP code that hooks into Composer's runtime. This is architecturally impossible to support from native Rust without embedding a PHP interpreter.
 
-**Libretto provides complete compatibility through two mechanisms:**
+If your project relies on plugins like:
+- `composer/installers` (custom install paths)
+- `phpstan/extension-installer`
+- Framework-specific plugins
 
-1. **Real Composer Support**: If your project has `composer/composer` as a dependency, Libretto uses the real Composer classes
-2. **Built-in Stubs**: If not, Libretto loads comprehensive stubs that implement the full Composer Event API
+You should continue using Composer.
 
-This means **any PHP callback that works with Composer will work with Libretto** - no modifications needed.
+### Script Support
 
-### Performance Optimization
+| Script Type | Support |
+|-------------|---------|
+| Shell commands | Works |
+| `@php` scripts | Works (calls PHP binary) |
+| `@composer` scripts | Partial |
+| PHP class callbacks | Basic support via stubs |
 
-For maximum speed, well-known callbacks are handled directly in Rust:
+Complex callbacks that deeply integrate with Composer's internals may not work correctly.
 
-| Callback | Optimization |
-|----------|-------------|
-| `Illuminate\Foundation\ComposerScripts::postAutoloadDump` | Cache files cleared directly in Rust |
-| `Illuminate\Foundation\ComposerScripts::postInstall` | Handled natively |
-| `Illuminate\Foundation\ComposerScripts::postUpdate` | Handled natively |
-| `Composer\Config::disableProcessTimeout` | No-op (Libretto has no timeout) |
+### Other Limitations
 
-### Environment Variables
-
-Scripts can detect Libretto via these environment variables:
-
-```bash
-LIBRETTO=1              # Always set when running under Libretto
-COMPOSER_DEV_MODE=1     # "1" for dev, "0" for production
-COMPOSER_VENDOR_DIR=/path/to/vendor
-```
-
-### Supported Frameworks
-
-| Framework | Status | Notes |
-|-----------|--------|-------|
-| Laravel | Full Support | All scripts work, optimized handling |
-| Symfony | Full Support | Full Flex compatibility |
-| Drupal | Full Support | Standard Composer scripts |
-| Any Other | Full Support | Any standard Composer scripts work |
-
-### Limitations
-
-- **Composer Plugins**: Deep plugin integration (plugins that modify Composer's internal behavior) is not supported. However, script callbacks from plugins work fine.
-- **Interactive Prompts**: Scripts that require complex interactive input may have limited functionality in non-TTY environments.
+- Private repository authentication is basic
+- Some `composer.json` options are ignored
+- Error messages are less polished than Composer's
+- No interactive prompts for conflicts
 
 ## Platform Support
 
 | Platform | Architecture | Status |
 |----------|-------------|--------|
-| Linux | x86_64 | ✅ Full Support |
-| Linux | aarch64 | ✅ Full Support |
-| macOS | x86_64 (Intel) | ✅ Full Support |
-| macOS | aarch64 (Apple Silicon) | ✅ Full Support |
-| Windows | x86_64 | ✅ Full Support |
+| Linux | x86_64, aarch64 | Supported |
+| macOS | x86_64, aarch64 | Supported |
+| Windows | x86_64 | Supported |
 
-### Platform-Specific Optimizations
+## Architecture
 
-- **Linux**: io_uring support (5.1+), AVX2/AVX-512 SIMD
-- **macOS**: kqueue I/O, NEON SIMD on Apple Silicon
-- **Windows**: IOCP I/O, AVX2 SIMD
+```
+crates/
+├── libretto-cli          # Command-line interface
+├── libretto-core         # Core types, error handling
+├── libretto-platform     # OS abstraction layer
+├── libretto-cache        # Content-addressable cache
+├── libretto-repository   # Packagist client
+├── libretto-resolver     # PubGrub dependency resolver
+├── libretto-downloader   # Parallel HTTP downloads
+├── libretto-archive      # ZIP/TAR extraction
+├── libretto-vcs          # Git operations
+├── libretto-autoloader   # PHP autoloader generation
+├── libretto-audit        # Security vulnerability checks
+└── libretto-lockfile     # Lock file management
+```
 
 ## Development
 
-### Prerequisites
-
-- Rust 1.89 or later
-- For cross-compilation: appropriate target toolchains
-
-### Building
-
 ```bash
-# Debug build
-cargo build
-
-# Release build
+# Build
 cargo build --release
 
-# Run tests
+# Test
 cargo test
 
-# Run clippy lints
+# Lint
 cargo clippy --all-targets --all-features -- -D warnings
 
-# Format code
+# Format
 cargo fmt --all
 
-# Run benchmarks
-cargo bench
-```
-
-### Cross-Compilation
-
-Aliases are provided in `.cargo/config.toml`:
-
-```bash
-cargo linux-x64     # x86_64-unknown-linux-gnu
-cargo linux-arm64   # aarch64-unknown-linux-gnu
-cargo macos-x64     # x86_64-apple-darwin
-cargo macos-arm64   # aarch64-apple-darwin
-cargo windows-x64   # x86_64-pc-windows-msvc
+# Benchmark
+cargo bench --package libretto-bench
 ```
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-### Code Style
-
-- Follow Rust conventions and idioms
-- Run `cargo fmt` before committing
-- Ensure `cargo clippy` passes without warnings
-- Add tests for new functionality
-- Update documentation as needed
+Contributions welcome! Please open an issue first for major changes.
 
 ## License
 
-Libretto is dual-licensed under the MIT License and Apache License 2.0. You may choose either license.
-
-- [MIT License](LICENSE-MIT)
-- [Apache License 2.0](LICENSE-APACHE)
+Dual-licensed under MIT and Apache 2.0.
 
 ## Acknowledgments
 
-- [Composer](https://getcomposer.org/) — The original PHP dependency manager
-- [uv](https://github.com/astral-sh/uv) — Inspiration for performance techniques and PubGrub implementation
-- [Packagist](https://packagist.org/) — The PHP package repository
-
----
-
-<p align="center">
-  Made with ❤️ and 🦀
-</p>
+- [Composer](https://getcomposer.org/) - The PHP package manager
+- [mago](https://github.com/carthage-software/mago) - Fast PHP parser used for autoloader generation
+- [uv](https://github.com/astral-sh/uv) - Inspiration for performance techniques
+- [pnpm](https://pnpm.io/) - Content-addressable storage inspiration
+- [Packagist](https://packagist.org/) - PHP package repository
