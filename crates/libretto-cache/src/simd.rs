@@ -3,7 +3,7 @@
 //! This module provides high-performance operations using SIMD intrinsics
 //! where available, with fallback implementations for unsupported platforms.
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
 use std::arch::x86_64::{
     __m256i, _mm256_cmpeq_epi8, _mm256_loadu_si256, _mm256_movemask_epi8, _mm256_set1_epi8,
 };

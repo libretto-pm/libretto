@@ -513,7 +513,7 @@ impl std::error::Error for ErrorCodeSource {}
 impl Error {
     /// Get the error code for this error.
     #[must_use]
-    pub fn code(&self) -> ErrorCode {
+    pub const fn code(&self) -> ErrorCode {
         match self {
             Self::PackageNotFound { code, .. } => code.0,
             Self::VersionNotFound { code, .. } => code.0,

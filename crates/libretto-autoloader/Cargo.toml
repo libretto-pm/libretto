@@ -40,9 +40,11 @@ rayon = { workspace = true }
 mago-syntax = "=1.3.0"
 mago-span = "=1.3.0"
 mago-database = "=1.3.0"
+mago-names = "=1.3.0"
+mago-fingerprint = "=1.3.0"
 bumpalo = "3"
 
-# Fast hashing
+# Fast hashing (kept for non-PHP file hashing)
 blake3 = { workspace = true }
 ahash = { workspace = true }
 

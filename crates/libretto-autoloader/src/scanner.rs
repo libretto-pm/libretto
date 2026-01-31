@@ -1,6 +1,7 @@
 //! Parallel file scanner using rayon and walkdir.
 //!
 //! Scans directories for PHP files and extracts class definitions in parallel.
+//! Uses mago-fingerprint for semantic fingerprinting that is immune to whitespace changes.
 
 use crate::parser::{ParserPool, PhpDefinition};
 use dashmap::DashMap;
@@ -22,8 +23,14 @@ pub struct FileScanResult {
     pub mtime: u64,
     /// File size in bytes.
     pub size: u64,
-    /// Content hash for change detection.
-    pub content_hash: [u8; 32],
+    /// Semantic fingerprint for change detection.
+    ///
+    /// This is a position-insensitive AST fingerprint that ignores whitespace
+    /// and formatting changes. Two files with identical semantics will have
+    /// the same fingerprint even if formatted differently.
+    ///
+    /// Example: `<?php $a = (1);` and `<?php $a =   1   ;` produce the same fingerprint.
+    pub fingerprint: u64,
 }
 
 /// Scanner statistics.
@@ -205,32 +212,36 @@ impl Scanner {
 
         let size = metadata.len();
 
-        // Read file and compute hash
+        // Read file content
         let Ok(content) = std::fs::read(path) else {
             self.stats.parse_errors.fetch_add(1, Ordering::Relaxed);
             return None;
         };
 
-        let content_hash = *blake3::hash(&content).as_bytes();
+        // Convert to string for parsing
+        let Ok(content_str) = std::str::from_utf8(&content) else {
+            self.stats.parse_errors.fetch_add(1, Ordering::Relaxed);
+            return None;
+        };
 
-        // Parse the file
+        // Parse file and get both definitions and fingerprint in one pass
         let mut parser = ParserPool::get();
-        let definitions = parser.parse_bytes(&content);
+        let result = parser.parse_str_with_fingerprint(content_str);
 
         self.stats.files_scanned.fetch_add(1, Ordering::Relaxed);
         self.stats
             .definitions_found
-            .fetch_add(definitions.len() as u64, Ordering::Relaxed);
+            .fetch_add(result.definitions.len() as u64, Ordering::Relaxed);
         self.stats
             .bytes_processed
             .fetch_add(size, Ordering::Relaxed);
 
         Some(FileScanResult {
             path: path.to_path_buf(),
-            definitions,
+            definitions: result.definitions,
             mtime,
             size,
-            content_hash,
+            fingerprint: result.fingerprint,
         })
     }
 
@@ -368,5 +379,37 @@ mod tests {
         let results = vec![];
         let map = build_classmap(&results);
         assert!(map.is_empty());
+    }
+
+    #[test]
+    fn fingerprint_ignores_whitespace() {
+        // Test that the semantic fingerprint ignores whitespace differences
+        let code1 = "<?php $a = 1;";
+        let code2 = "<?php $a   =   1   ;";
+
+        let mut parser = ParserPool::get();
+        let result1 = parser.parse_str_with_fingerprint(code1);
+        let result2 = parser.parse_str_with_fingerprint(code2);
+
+        assert_eq!(
+            result1.fingerprint, result2.fingerprint,
+            "Fingerprints should be identical despite whitespace differences"
+        );
+    }
+
+    #[test]
+    fn fingerprint_differs_for_semantic_changes() {
+        // Test that the fingerprint changes when the code semantically changes
+        let code1 = "<?php $a = 1;";
+        let code2 = "<?php $a = 2;";
+
+        let mut parser = ParserPool::get();
+        let result1 = parser.parse_str_with_fingerprint(code1);
+        let result2 = parser.parse_str_with_fingerprint(code2);
+
+        assert_ne!(
+            result1.fingerprint, result2.fingerprint,
+            "Fingerprints should differ for semantic changes"
+        );
     }
 }

@@ -3707,6 +3707,8 @@ dependencies = [
  "dashmap",
  "libretto-core",
  "mago-database",
+ "mago-fingerprint",
+ "mago-names",
  "mago-span",
  "mago-syntax",
  "memchr",
@@ -3775,6 +3777,7 @@ dependencies = [
  "memmap2",
  "moka",
  "parking_lot",
+ "rand 0.8.5",
  "rkyv",
  "serde",
  "sonic-rs",
@@ -4181,6 +4184,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mago-atom"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69d2cecb4b67e74de6b63d90327ce27ce53c298ead24536dad81fefcb2e256d6"
+dependencies = [
+ "itoa",
+ "ryu",
+ "ustr",
+]
+
+[[package]]
 name = "mago-database"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4196,6 +4210,32 @@ dependencies = [
  "simdutf8",
  "tracing",
  "walkdir",
+]
+
+[[package]]
+name = "mago-fingerprint"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0505baad975edca87ea2bc767b96733fb9a89aa634aa1caf1f887e73960f085"
+dependencies = [
+ "ahash",
+ "mago-atom",
+ "mago-names",
+ "mago-syntax",
+]
+
+[[package]]
+name = "mago-names"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5b6c2c9f5e026e56e96cae46959c4c6025e2dc7bf78fc2d7f4d8eec973c87a2"
+dependencies = [
+ "ahash",
+ "bumpalo",
+ "mago-span",
+ "mago-syntax",
+ "serde",
+ "strum",
 ]
 
 [[package]]
@@ -7117,6 +7157,19 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_derive",
+]
+
+[[package]]
+name = "ustr"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18b19e258aa08450f93369cf56dd78063586adf19e92a75b338a800f799a0208"
+dependencies = [
+ "ahash",
+ "byteorder",
+ "lazy_static",
+ "parking_lot",
+ "serde",
 ]
 
 [[package]]

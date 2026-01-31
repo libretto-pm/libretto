@@ -400,3 +400,7 @@ opt-level = 1
 inherits = "release"
 debug = true
 strip = false
+# Override release settings to reduce memory usage during benchmark compilation
+# Fat LTO with codegen-units=1 can consume 20GB+ RAM when compiling many benchmarks
+lto = "thin"
+codegen-units = 4

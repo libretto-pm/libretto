@@ -119,8 +119,12 @@ pub struct CachedFileEntry {
     pub path: String,
     /// Modification time (unix timestamp).
     pub mtime: u64,
-    /// Content hash (blake3).
-    pub content_hash: [u8; 32],
+    /// Semantic fingerprint for change detection.
+    ///
+    /// This is a position-insensitive AST fingerprint that ignores whitespace
+    /// and formatting changes. Two files with identical semantics will have
+    /// the same fingerprint even if formatted differently.
+    pub fingerprint: u64,
     /// Extracted class names.
     pub classes: Vec<String>,
 }
@@ -264,7 +268,7 @@ impl IncrementalCache {
             let entry = CachedFileEntry {
                 path: rel_path.clone(),
                 mtime: result.mtime,
-                content_hash: result.content_hash,
+                fingerprint: result.fingerprint,
                 classes,
             };
 
