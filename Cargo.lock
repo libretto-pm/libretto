@@ -4035,7 +4035,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-archive"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bzip2 0.4.4",
  "flate2",
@@ -4050,7 +4050,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-audit"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4090,7 +4090,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-autoloader"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "blake3",
@@ -4118,7 +4118,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-bench"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4155,7 +4155,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-cache"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "blake3",
@@ -4182,7 +4182,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -4241,7 +4241,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-config"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "blake3",
@@ -4269,7 +4269,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "blake3",
@@ -4296,7 +4296,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-downloader"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-compression",
  "async-stream",
@@ -4342,7 +4342,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-lockfile"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "blake3",
@@ -4371,7 +4371,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-platform"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bytes",
  "cfg-if",
@@ -4400,7 +4400,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-plugin-system"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "anyhow",
@@ -4433,7 +4433,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-repository"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "backon",
@@ -4462,7 +4462,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-resolver"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "ahash",
  "astral-pubgrub",
@@ -4493,7 +4493,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-test-utils"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "arbitrary",
@@ -4531,7 +4531,7 @@ dependencies = [
 
 [[package]]
 name = "libretto-vcs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "backon",
  "blake3",
