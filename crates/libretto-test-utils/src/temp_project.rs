@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use tempfile::{tempdir, TempDir};
+use tempfile::{TempDir, tempdir};
 use tokio::fs;
 
 use crate::fixtures::Fixtures;
@@ -384,7 +384,10 @@ impl TempProjectBuilder {
         for (namespace, class_name, content) in self.php_classes {
             // Convert namespace to path
             let ns_path = namespace.replace('\\', "/");
-            let file_path = root.join("src").join(&ns_path).join(format!("{class_name}.php"));
+            let file_path = root
+                .join("src")
+                .join(&ns_path)
+                .join(format!("{class_name}.php"));
             if let Some(parent) = file_path.parent() {
                 fs::create_dir_all(parent).await?;
             }
@@ -456,8 +459,16 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(project.file_exists("vendor/monolog/monolog/composer.json").await);
-        assert!(project.file_exists("vendor/monolog/monolog/src/Logger.php").await);
+        assert!(
+            project
+                .file_exists("vendor/monolog/monolog/composer.json")
+                .await
+        );
+        assert!(
+            project
+                .file_exists("vendor/monolog/monolog/src/Logger.php")
+                .await
+        );
     }
 
     #[tokio::test]
