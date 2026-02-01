@@ -1,0 +1,30 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Outdated command help
+---
+Shows a list of locally modified packages
+
+Usage: libretto outdated [OPTIONS] [PACKAGE]...
+
+Arguments:
+  [PACKAGE]...  Packages to check (all if omitted)
+
+Options:
+  -a, --all                Show all packages, not just outdated ones
+  -q, --quiet              Do not output any message
+      --ansi               Force ANSI output (colors and formatting)
+  -D, --direct             Only show direct dependencies
+  -m, --minor-only         Only show minor and patch updates
+      --no-ansi            Disable ANSI output (colors and formatting)
+  -f, --format <FORMAT>    Output format (text, json) [default: text]
+  -n, --no-interaction     Do not ask any interactive question
+      --profile            Display timing and memory usage information
+      --strict             Exit with non-zero if any package is outdated
+      --no-plugins         Disables all plugins
+      --no-scripts         Skips execution of scripts defined in composer.json
+  -d, --working-dir <DIR>  Use the specified directory as working directory
+      --no-cache           Prevent use of the cache
+  -v, --verbose...         Increase the verbosity of messages: -v for verbose, -vv for very verbose,
+                           -vvv for debug
+  -h, --help               Print help
+  -V, --version            Print version

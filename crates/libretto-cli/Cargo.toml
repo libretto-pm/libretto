@@ -89,3 +89,15 @@ parking_lot = { workspace = true }
 # Hashing
 sha1 = { workspace = true }
 hex = { workspace = true }
+
+[dev-dependencies]
+# Testing frameworks
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+insta = { workspace = true }
+tempfile = { workspace = true }
+proptest = { workspace = true }
+rstest = { workspace = true }
+tokio-test = { workspace = true }
+pretty_assertions = { workspace = true }
+wiremock = { workspace = true }

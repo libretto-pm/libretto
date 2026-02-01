@@ -104,6 +104,125 @@ jobs:
       - name: Run platform-specific tests
         run: cargo test --target ${{ matrix.target }} -p libretto-platform --features "${{ matrix.features }}" -- --nocapture
 
+  # Property-based tests
+  proptest:
+    name: Property-based Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: proptest
+
+      - name: Run property-based tests (libretto-core)
+        run: cargo test -p libretto-core prop_ -- --nocapture
+        env:
+          PROPTEST_CASES: 1000
+
+      - name: Run property-based tests (libretto-resolver)
+        run: cargo test -p libretto-resolver prop_ -- --nocapture
+        env:
+          PROPTEST_CASES: 1000
+
+  # Integration tests
+  integration:
+    name: Integration Tests
+    needs: lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: integration-${{ matrix.os }}
+
+      - name: Build CLI
+        run: cargo build --package libretto-cli
+
+      - name: Run integration tests
+        run: cargo test --test integration_tests -- --nocapture
+
+      - name: Run platform tests
+        run: cargo test --test platform_tests -- --nocapture
+
+      - name: Run stress tests
+        run: cargo test --test stress_tests -- --nocapture
+        timeout-minutes: 10
+
+  # CLI snapshot tests
+  snapshots:
+    name: Snapshot Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: snapshots
+
+      - name: Install cargo-insta
+        run: cargo install cargo-insta
+
+      - name: Build CLI
+        run: cargo build --package libretto-cli
+
+      - name: Run snapshot tests
+        run: cargo test -p libretto-cli --test snapshot_tests -- --nocapture
+
+      - name: Check for pending snapshots
+        run: cargo insta test -p libretto-cli --check
+
+  # Security tests
+  security:
+    name: Security Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: security
+
+      - name: Run security tests
+        run: cargo test --test security_tests -- --nocapture
+
   # Test SIMD-specific code
   test-simd:
     name: SIMD Tests (${{ matrix.os }}, ${{ matrix.simd }})
@@ -332,3 +451,34 @@ jobs:
 
       - name: Run release tests
         run: cargo test --release --target ${{ matrix.target }} --package libretto-platform
+
+  # Fuzz testing (limited iterations for CI)
+  fuzz:
+    name: Fuzz Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fuzz
+
+      - name: Run fuzz tests (limited iterations)
+        run: |
+          cd fuzz
+          for target in fuzz_version_constraint fuzz_json_parsing fuzz_package_name; do
+            echo "Fuzzing $target..."
+            cargo +nightly fuzz run $target -- -max_total_time=30 || true
+          done
+        continue-on-error: true

@@ -1,0 +1,7 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Validate command with valid composer.json
+---
+Libretto Validating composer.json...
+
+Success: composer.json is valid

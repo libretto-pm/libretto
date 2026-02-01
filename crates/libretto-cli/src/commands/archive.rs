@@ -13,7 +13,7 @@ pub struct ArchiveArgs {
     pub package: Option<String>,
 
     /// Version to archive
-    #[arg(value_name = "VERSION")]
+    #[arg(value_name = "VERSION", name = "pkg_version")]
     pub version: Option<String>,
 
     /// Write the archive to this file

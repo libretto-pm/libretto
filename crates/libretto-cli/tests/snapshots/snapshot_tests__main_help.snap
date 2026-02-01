@@ -1,0 +1,94 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Main help output
+---
+A high-performance Composer-compatible package manager
+
+Usage: libretto [OPTIONS] <COMMAND>
+
+Commands:
+  about                Short information about Libretto
+  archive              Creates an archive of this composer package
+  audit                Checks for security vulnerability advisories for installed packages
+  browse               Opens the package's repository URL or homepage in your browser
+  bump                 Increases the lower limit of your composer.json requirements to the currently
+                       installed versions
+  clear-cache          Clears composer's internal package cache [aliases: clearcache]
+  cache:list           Lists packages in the cache
+  check-platform-reqs  Check that platform requirements are satisfied
+  completion           Generate completion script for the specified shell
+  config               Sets config options. You can use -g to set global options
+  create-project       Creates new project from a package into given directory
+  depends              Shows which packages cause the given package to be installed
+  diagnose             Diagnoses the system to identify common errors
+  dump-autoload        Regenerates the autoloader files [aliases: dumpautoload]
+  exec                 Executes a vendored binary/script
+  fund                 Discover how to help fund the maintenance of your dependencies
+  global               Allows running commands in the global composer dir ($`COMPOSER_HOME`)
+  init                 Creates a basic composer.json file in current directory
+  install              Installs the project dependencies from the composer.lock file if present, or
+                       falls back on the composer.json [aliases: i]
+  licenses             Shows information about licenses of dependencies
+  outdated             Shows a list of locally modified packages
+  prohibits            Shows which packages prevent the given package from being installed
+  reinstall            Uninstalls and reinstalls the given package names
+  remove               Removes a package from the require or require-dev [aliases: rm]
+  repository           Manages repositories (add, remove, list)
+  require              Adds required packages to your composer.json and installs them [aliases: r]
+  run-script           Runs the scripts defined in composer.json
+  search               Searches for packages
+  self-update          Updates Libretto to the latest version
+  show                 Shows information about packages
+  status               Shows a list of locally modified packages
+  suggests             Shows package suggestions
+  update               Updates your dependencies to the latest version according to composer.json,
+                       and updates the composer.lock file [aliases: u]
+  validate             Validates a composer.json and composer.lock
+  help                 Print this message or the help of the given subcommand(s)
+
+Options:
+  -q, --quiet
+          Do not output any message
+
+      --ansi
+          Force ANSI output (colors and formatting)
+
+      --no-ansi
+          Disable ANSI output (colors and formatting)
+
+  -n, --no-interaction
+          Do not ask any interactive question
+
+      --profile
+          Display timing and memory usage information
+
+      --no-plugins
+          Disables all plugins
+
+      --no-scripts
+          Skips execution of scripts defined in composer.json
+
+  -d, --working-dir <DIR>
+          Use the specified directory as working directory
+
+      --no-cache
+          Prevent use of the cache
+
+      --format <FORMAT>
+          Output format (text, json, or table)
+
+          Possible values:
+          - table: Human-readable table format
+          - json:  JSON format
+          - text:  Plain text format
+          
+          [default: text]
+
+  -v, --verbose...
+          Increase the verbosity of messages: -v for verbose, -vv for very verbose, -vvv for debug
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

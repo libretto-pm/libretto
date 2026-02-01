@@ -1,0 +1,2199 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Zsh completion script
+---
+#compdef libretto
+
+autoload -U is-at-least
+
+_libretto() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_libretto_commands" \
+"*::: :->libretto" \
+&& ret=0
+    case $state in
+    (libretto)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:libretto-command-$line[1]:"
+        case $line[1] in
+            (about)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(archive)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Write the archive to this file]:FILE:_files' \
+'--file=[Write the archive to this file]:FILE:_files' \
+'--dir=[Write the archive to this directory]:DIR:_files' \
+'--format=[Format of the archive (zip, tar, tar.gz, tar.bz2)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--stdout[Dump the archive to stdout instead of writing to file]' \
+'--ignore-filters[Do not include files/folders from the project]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::package -- The package to archive (vendor/name format):_default' \
+'::pkg_version -- Version to archive:_default' \
+&& ret=0
+;;
+(audit)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (table, json)]:FORMAT:_default' \
+'--format=[Output format (table, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--no-fail[Don'\''t fail on vulnerabilities]' \
+'--abandoned[Only show abandoned packages]' \
+'--locked[Only audit packages from composer.lock (don'\''t resolve from composer.json)]' \
+'--suggest-versions[Suggest safe versions for vulnerable packages]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(browse)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-H[Open the homepage instead of the repository URL]' \
+'--homepage[Open the homepage instead of the repository URL]' \
+'-s[Only show the URL, don'\''t open browser]' \
+'--show[Only show the URL, don'\''t open browser]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::package -- Package to browse (vendor/name format):_default' \
+&& ret=0
+;;
+(bump)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-D[Only bump dev dependencies]' \
+'--dev-only[Only bump dev dependencies]' \
+'-R[Only bump non-dev dependencies]' \
+'--no-dev-only[Only bump non-dev dependencies]' \
+'--dry-run[Only show what would be changed, don'\''t modify composer.json]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Only bump packages matching the given patterns:_default' \
+&& ret=0
+;;
+(clear-cache)
+_arguments "${_arguments_options[@]}" : \
+'--max-age=[Maximum age for cache entries when using --gc (e.g., "30d", "12h")]:MAX_AGE:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--packages[Only clear the packages cache]' \
+'--repo[Only clear the repository cache]' \
+'--vcs[Only clear the VCS cache]' \
+'--cas[Only clear the content-addressable storage (CAS) cache]' \
+'--gc[Garbage collect expired cache entries]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(clearcache)
+_arguments "${_arguments_options[@]}" : \
+'--max-age=[Maximum age for cache entries when using --gc (e.g., "30d", "12h")]:MAX_AGE:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--packages[Only clear the packages cache]' \
+'--repo[Only clear the repository cache]' \
+'--vcs[Only clear the VCS cache]' \
+'--cas[Only clear the content-addressable storage (CAS) cache]' \
+'--gc[Garbage collect expired cache entries]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(cache:list)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--packages[Only list packages cache]' \
+'--repo[Only list repository cache]' \
+'--vcs[Only list VCS cache]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(check-platform-reqs)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (text, json)]:FORMAT:_default' \
+'--format=[Output format (text, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--lock[Only check platform requirements from lock file]' \
+'--no-check-php[Do not check PHP version]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(completion)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':shell -- The shell to generate completion for:((bash\:"Bash shell"
+zsh\:"Zsh shell"
+fish\:"Fish shell"
+power-shell\:"\`PowerShell\`"
+elvish\:"Elvish shell"))' \
+&& ret=0
+;;
+(config)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-g[Set config globally]' \
+'--global[Set config globally]' \
+'-l[List all config settings]' \
+'--list[List all config settings]' \
+'--unset[Unset the config setting]' \
+'-e[Edit config file in editor]' \
+'--editor[Edit config file in editor]' \
+'--auth[Merge with existing auth config]' \
+'-a[Append to existing array values instead of overwriting]' \
+'--append[Append to existing array values instead of overwriting]' \
+'--absolute[Output raw config value]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::key -- Setting name to get or set:_default' \
+'::value -- Value to set (omit to get current value):_default' \
+&& ret=0
+;;
+(create-project)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Minimum stability to allow (stable, RC, beta, alpha, dev)]:STABILITY:_default' \
+'--stability=[Minimum stability to allow (stable, RC, beta, alpha, dev)]:STABILITY:_default' \
+'--repository=[Forces installation from source even for stable versions]:REPOSITORY:_default' \
+'--add-repository=[Add a custom repository URL]:ADD_REPOSITORY:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--prefer-source[Prefer source packages (from VCS)]' \
+'--prefer-dist[Prefer dist packages (archives)]' \
+'--no-dev[Disables installation of require-dev packages]' \
+'--no-install[Skip vendor directory installation]' \
+'--no-interaction[Run non-interactively]' \
+'--keep-vcs[Keep the VCS history]' \
+'--remove-vcs[Remove the VCS directory]' \
+'--ignore-platform-reqs[Ignore platform requirements]' \
+'--ask[Ask before removing old files/directories]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':package -- Package to create project from (vendor/name format):_default' \
+'::directory -- Directory to create project in:_default' \
+'::pkg_version -- Version constraint to use:_default' \
+&& ret=0
+;;
+(depends)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-r[Recursively resolve up to the root packages]' \
+'--recursive[Recursively resolve up to the root packages]' \
+'-t[Show tree view]' \
+'--tree[Show tree view]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':package -- Package to check:_default' \
+&& ret=0
+;;
+(diagnose)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(dump-autoload)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-o[Optimize autoloader for production]' \
+'--optimize[Optimize autoloader for production]' \
+'-c[Convert PSR-0/PSR-4 to classmap]' \
+'--classmap-authoritative[Convert PSR-0/PSR-4 to classmap]' \
+'--apcu[\`APCu\` caching]' \
+'--no-scripts[Don'\''t scan for classes]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(dumpautoload)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-o[Optimize autoloader for production]' \
+'--optimize[Optimize autoloader for production]' \
+'-c[Convert PSR-0/PSR-4 to classmap]' \
+'--classmap-authoritative[Convert PSR-0/PSR-4 to classmap]' \
+'--apcu[\`APCu\` caching]' \
+'--no-scripts[Don'\''t scan for classes]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-l[List available binaries]' \
+'--list[List available binaries]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':binary -- Binary/script name to execute:_default' \
+'*::args -- Arguments to pass to the binary:_default' \
+&& ret=0
+;;
+(fund)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (text, json)]:FORMAT:_default' \
+'--format=[Output format (text, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(global)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':command -- Command to run (require, remove, update, etc.):_default' \
+'*::args -- Arguments for the command:_default' \
+&& ret=0
+;;
+(init)
+_arguments "${_arguments_options[@]}" : \
+'--name=[Project name (vendor/name)]:NAME:_default' \
+'--description=[Project description]:DESCRIPTION:_default' \
+'--author=[Author (name \`<email>\`)]:AUTHOR:_default' \
+'--package-type=[Package type]:PACKAGE_TYPE:_default' \
+'-l+[License]:LICENSE:_default' \
+'--license=[License]:LICENSE:_default' \
+'--stability=[Minimum stability]:STABILITY:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(install)
+_arguments "${_arguments_options[@]}" : \
+'*--ignore-platform-req=[Ignore specific platform requirements (e.g., php, ext-*)]:REQ:_default' \
+'--minimum-stability=[Minimum stability (dev, alpha, beta, RC, stable)]:STABILITY:_default' \
+'--concurrency=[Maximum concurrent HTTP requests]:CONCURRENCY:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--no-dev[Skip dev dependencies]' \
+'--prefer-dist[Prefer dist packages (archives)]' \
+'--prefer-source[Prefer source packages (VCS)]' \
+'--dry-run[Dry run (don'\''t install anything)]' \
+'--ignore-platform-reqs[Ignore platform requirements]' \
+'-o[Optimize autoloader]' \
+'--optimize-autoloader[Optimize autoloader]' \
+'-a[Generate classmap for PSR-0/4 autoloading]' \
+'--classmap-authoritative[Generate classmap for PSR-0/4 autoloading]' \
+'--apcu-autoloader[\`APCu\` autoloader caching]' \
+'--no-scripts[Skip scripts execution]' \
+'--prefer-lowest[Prefer lowest versions (for testing)]' \
+'--prefer-stable[Prefer stable versions]' \
+'--no-progress[Disable progress bar]' \
+'--audit[Run security audit after installation]' \
+'--fail-on-audit[Fail installation if security vulnerabilities are found]' \
+'--verify-checksums[Verify package checksums and fail on mismatch]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(i)
+_arguments "${_arguments_options[@]}" : \
+'*--ignore-platform-req=[Ignore specific platform requirements (e.g., php, ext-*)]:REQ:_default' \
+'--minimum-stability=[Minimum stability (dev, alpha, beta, RC, stable)]:STABILITY:_default' \
+'--concurrency=[Maximum concurrent HTTP requests]:CONCURRENCY:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--no-dev[Skip dev dependencies]' \
+'--prefer-dist[Prefer dist packages (archives)]' \
+'--prefer-source[Prefer source packages (VCS)]' \
+'--dry-run[Dry run (don'\''t install anything)]' \
+'--ignore-platform-reqs[Ignore platform requirements]' \
+'-o[Optimize autoloader]' \
+'--optimize-autoloader[Optimize autoloader]' \
+'-a[Generate classmap for PSR-0/4 autoloading]' \
+'--classmap-authoritative[Generate classmap for PSR-0/4 autoloading]' \
+'--apcu-autoloader[\`APCu\` autoloader caching]' \
+'--no-scripts[Skip scripts execution]' \
+'--prefer-lowest[Prefer lowest versions (for testing)]' \
+'--prefer-stable[Prefer stable versions]' \
+'--no-progress[Disable progress bar]' \
+'--audit[Run security audit after installation]' \
+'--fail-on-audit[Fail installation if security vulnerabilities are found]' \
+'--verify-checksums[Verify package checksums and fail on mismatch]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(licenses)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (text, json, summary)]:FORMAT:_default' \
+'--format=[Output format (text, json, summary)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--dev[Only show dev dependencies]' \
+'--no-dev[Only show production dependencies]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(outdated)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (text, json)]:FORMAT:_default' \
+'--format=[Output format (text, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'-a[Show all packages, not just outdated ones]' \
+'--all[Show all packages, not just outdated ones]' \
+'-D[Only show direct dependencies]' \
+'--direct[Only show direct dependencies]' \
+'-m[Only show minor and patch updates]' \
+'--minor-only[Only show minor and patch updates]' \
+'--strict[Exit with non-zero if any package is outdated]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to check (all if omitted):_default' \
+&& ret=0
+;;
+(prohibits)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-r[Recursively resolve up to the root packages]' \
+'--recursive[Recursively resolve up to the root packages]' \
+'-t[Show tree view]' \
+'--tree[Show tree view]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':package -- Package to check (vendor/name format):_default' \
+'::pkg_version -- Version to check:_default' \
+&& ret=0
+;;
+(reinstall)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--prefer-source[Prefer source packages (from VCS)]' \
+'--prefer-dist[Prefer dist packages (archives)]' \
+'--no-dev[Skip dev dependencies]' \
+'--no-autoloader[Skip autoloader generation]' \
+'--no-scripts[Skip script execution]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to reinstall (all if omitted):_default' \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-D[Remove from dev dependencies]' \
+'--dev[Remove from dev dependencies]' \
+'--no-update[Don'\''t update dependencies after removing]' \
+'--no-update-with-dependencies[Don'\''t remove unused dependencies]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to remove:_default' \
+&& ret=0
+;;
+(rm)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-D[Remove from dev dependencies]' \
+'--dev[Remove from dev dependencies]' \
+'--no-update[Don'\''t update dependencies after removing]' \
+'--no-update-with-dependencies[Don'\''t remove unused dependencies]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to remove:_default' \
+&& ret=0
+;;
+(repository)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-g[Set config globally]' \
+'--global[Set config globally]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_libretto__repository_commands" \
+"*::: :->repository" \
+&& ret=0
+
+    case $state in
+    (repository)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:libretto-repository-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+'-t+[Repository type (composer, vcs, path, artifact)]:REPO_TYPE:_default' \
+'--repo-type=[Repository type (composer, vcs, path, artifact)]:REPO_TYPE:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Repository name:_default' \
+':url -- Repository URL or path:_default' \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Repository name:_default' \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(enable)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Repository name:_default' \
+&& ret=0
+;;
+(disable)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Repository name:_default' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_libretto__repository__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:libretto-repository-help-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(enable)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(disable)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(require)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-D[Add as dev dependency]' \
+'--dev[Add as dev dependency]' \
+'--no-update[Don'\''t update dependencies after adding]' \
+'--dry-run[Dry run]' \
+'--prefer-stable[Prefer stable versions]' \
+'--sort-packages[Sort packages alphabetically]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to require (name or name\:version):_default' \
+&& ret=0
+;;
+(r)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-D[Add as dev dependency]' \
+'--dev[Add as dev dependency]' \
+'--no-update[Don'\''t update dependencies after adding]' \
+'--dry-run[Dry run]' \
+'--prefer-stable[Prefer stable versions]' \
+'--sort-packages[Sort packages alphabetically]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to require (name or name\:version):_default' \
+&& ret=0
+;;
+(run-script)
+_arguments "${_arguments_options[@]}" : \
+'--timeout=[Set script timeout in seconds (0 for no timeout)]:TIMEOUT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-l[List available scripts]' \
+'--list[List available scripts]' \
+'--dev[Run in dev mode (includes dev dependencies in path)]' \
+'--no-dev[Run in no-dev mode (excludes dev dependencies)]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::script -- Script name to run:_default' \
+'*::args -- Arguments to pass to the script:_default' \
+&& ret=0
+;;
+(search)
+_arguments "${_arguments_options[@]}" : \
+'-t+[Filter by package type (library, project, etc.)]:PACKAGE_TYPE:_default' \
+'--type=[Filter by package type (library, project, etc.)]:PACKAGE_TYPE:_default' \
+'-f+[Output format (text, json)]:FORMAT:_default' \
+'--format=[Output format (text, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'-N[Only show package names]' \
+'--only-name[Only show package names]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':query -- Search query:_default' \
+&& ret=0
+;;
+(self-update)
+_arguments "${_arguments_options[@]}" : \
+'--set-channel-only=[Set the update channel (stable, preview, snapshot)]:SET_CHANNEL_ONLY:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-r[Rollback to the previous version]' \
+'--rollback[Rollback to the previous version]' \
+'--check[Only check for updates, don'\''t install]' \
+'--preview[Update to the latest preview version]' \
+'--stable[Update to the latest stable version]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::target_version -- Update to a specific version:_default' \
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-i[Show installed packages]' \
+'--installed[Show installed packages]' \
+'--available[Show available versions]' \
+'-a[Show all info]' \
+'--all[Show all info]' \
+'-t[Output as dependency tree]' \
+'--tree[Output as dependency tree]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::package -- Package name (vendor/name):_default' \
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'-v[Show verbose diff output]' \
+'--verbose[Show verbose diff output]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(suggests)
+_arguments "${_arguments_options[@]}" : \
+'-f+[Output format (text, json)]:FORMAT:_default' \
+'--format=[Output format (text, json)]:FORMAT:_default' \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--installed[Only show suggestions that are already installed]' \
+'--uninstalled[Only show suggestions that are NOT installed]' \
+'--flat[Show flat list without grouping]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Only show suggestions for specified packages:_default' \
+&& ret=0
+;;
+(update)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--no-dev[Skip dev dependencies]' \
+'--prefer-lowest[Prefer lowest versions]' \
+'--prefer-stable[Prefer stable versions]' \
+'--dry-run[Dry run (don'\''t update anything)]' \
+'--root-reqs[Only update root dependencies]' \
+'--lock[Lock file only (don'\''t install)]' \
+'--audit[Run security audit after update]' \
+'--fail-on-audit[Fail update if security vulnerabilities are found]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to update (all if empty):_default' \
+&& ret=0
+;;
+(u)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--no-dev[Skip dev dependencies]' \
+'--prefer-lowest[Prefer lowest versions]' \
+'--prefer-stable[Prefer stable versions]' \
+'--dry-run[Dry run (don'\''t update anything)]' \
+'--root-reqs[Only update root dependencies]' \
+'--lock[Lock file only (don'\''t install)]' \
+'--audit[Run security audit after update]' \
+'--fail-on-audit[Fail update if security vulnerabilities are found]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'*::packages -- Packages to update (all if empty):_default' \
+&& ret=0
+;;
+(validate)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Use the specified directory as working directory]:DIR:_files' \
+'--working-dir=[Use the specified directory as working directory]:DIR:_files' \
+'--format=[Output format (text, json, or table)]:FORMAT:((table\:"Human-readable table format"
+json\:"JSON format"
+text\:"Plain text format"))' \
+'--with-dependencies[Check composer.lock too]' \
+'--strict[Strict mode (warnings as errors)]' \
+'--no-check-version[Don'\''t validate require(-dev) versions]' \
+'-q[Do not output any message]' \
+'--quiet[Do not output any message]' \
+'(--no-ansi)--ansi[Force ANSI output (colors and formatting)]' \
+'--no-ansi[Disable ANSI output (colors and formatting)]' \
+'-n[Do not ask any interactive question]' \
+'--no-interaction[Do not ask any interactive question]' \
+'--profile[Display timing and memory usage information]' \
+'--no-plugins[Disables all plugins]' \
+'--no-scripts[Skips execution of scripts defined in composer.json]' \
+'--no-cache[Prevent use of the cache]' \
+'*-v[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'*--verbose[Increase the verbosity of messages\: -v for verbose, -vv for very verbose, -vvv for debug]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_libretto__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:libretto-help-command-$line[1]:"
+        case $line[1] in
+            (about)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(archive)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(audit)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(browse)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(bump)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(clear-cache)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache:list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(check-platform-reqs)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(completion)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(config)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(create-project)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(depends)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(diagnose)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(dump-autoload)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(exec)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(fund)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(global)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(init)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(install)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(licenses)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(outdated)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(prohibits)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(reinstall)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(repository)
+_arguments "${_arguments_options[@]}" : \
+":: :_libretto__help__repository_commands" \
+"*::: :->repository" \
+&& ret=0
+
+    case $state in
+    (repository)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:libretto-help-repository-command-$line[1]:"
+        case $line[1] in
+            (add)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(remove)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(enable)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(disable)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(require)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(run-script)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(search)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(self-update)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(show)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(status)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(suggests)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(update)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(validate)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_libretto_commands] )) ||
+_libretto_commands() {
+    local commands; commands=(
+'about:Short information about Libretto' \
+'archive:Creates an archive of this composer package' \
+'audit:Checks for security vulnerability advisories for installed packages' \
+'browse:Opens the package'\''s repository URL or homepage in your browser' \
+'bump:Increases the lower limit of your composer.json requirements to the currently installed versions' \
+'clear-cache:Clears composer'\''s internal package cache' \
+'clearcache:Clears composer'\''s internal package cache' \
+'cache:list:Lists packages in the cache' \
+'check-platform-reqs:Check that platform requirements are satisfied' \
+'completion:Generate completion script for the specified shell' \
+'config:Sets config options. You can use -g to set global options' \
+'create-project:Creates new project from a package into given directory' \
+'depends:Shows which packages cause the given package to be installed' \
+'diagnose:Diagnoses the system to identify common errors' \
+'dump-autoload:Regenerates the autoloader files' \
+'dumpautoload:Regenerates the autoloader files' \
+'exec:Executes a vendored binary/script' \
+'fund:Discover how to help fund the maintenance of your dependencies' \
+'global:Allows running commands in the global composer dir (\$\`COMPOSER_HOME\`)' \
+'init:Creates a basic composer.json file in current directory' \
+'install:Installs the project dependencies from the composer.lock file if present, or falls back on the composer.json' \
+'i:Installs the project dependencies from the composer.lock file if present, or falls back on the composer.json' \
+'licenses:Shows information about licenses of dependencies' \
+'outdated:Shows a list of locally modified packages' \
+'prohibits:Shows which packages prevent the given package from being installed' \
+'reinstall:Uninstalls and reinstalls the given package names' \
+'remove:Removes a package from the require or require-dev' \
+'rm:Removes a package from the require or require-dev' \
+'repository:Manages repositories (add, remove, list)' \
+'require:Adds required packages to your composer.json and installs them' \
+'r:Adds required packages to your composer.json and installs them' \
+'run-script:Runs the scripts defined in composer.json' \
+'search:Searches for packages' \
+'self-update:Updates Libretto to the latest version' \
+'show:Shows information about packages' \
+'status:Shows a list of locally modified packages' \
+'suggests:Shows package suggestions' \
+'update:Updates your dependencies to the latest version according to composer.json, and updates the composer.lock file' \
+'u:Updates your dependencies to the latest version according to composer.json, and updates the composer.lock file' \
+'validate:Validates a composer.json and composer.lock' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'libretto commands' commands "$@"
+}
+(( $+functions[_libretto__about_commands] )) ||
+_libretto__about_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto about commands' commands "$@"
+}
+(( $+functions[_libretto__archive_commands] )) ||
+_libretto__archive_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto archive commands' commands "$@"
+}
+(( $+functions[_libretto__audit_commands] )) ||
+_libretto__audit_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto audit commands' commands "$@"
+}
+(( $+functions[_libretto__browse_commands] )) ||
+_libretto__browse_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto browse commands' commands "$@"
+}
+(( $+functions[_libretto__bump_commands] )) ||
+_libretto__bump_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto bump commands' commands "$@"
+}
+(( $+functions[_libretto__cache:list_commands] )) ||
+_libretto__cache:list_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto cache:list commands' commands "$@"
+}
+(( $+functions[_libretto__check-platform-reqs_commands] )) ||
+_libretto__check-platform-reqs_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto check-platform-reqs commands' commands "$@"
+}
+(( $+functions[_libretto__clear-cache_commands] )) ||
+_libretto__clear-cache_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto clear-cache commands' commands "$@"
+}
+(( $+functions[_libretto__completion_commands] )) ||
+_libretto__completion_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto completion commands' commands "$@"
+}
+(( $+functions[_libretto__config_commands] )) ||
+_libretto__config_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto config commands' commands "$@"
+}
+(( $+functions[_libretto__create-project_commands] )) ||
+_libretto__create-project_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto create-project commands' commands "$@"
+}
+(( $+functions[_libretto__depends_commands] )) ||
+_libretto__depends_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto depends commands' commands "$@"
+}
+(( $+functions[_libretto__diagnose_commands] )) ||
+_libretto__diagnose_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto diagnose commands' commands "$@"
+}
+(( $+functions[_libretto__dump-autoload_commands] )) ||
+_libretto__dump-autoload_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto dump-autoload commands' commands "$@"
+}
+(( $+functions[_libretto__exec_commands] )) ||
+_libretto__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto exec commands' commands "$@"
+}
+(( $+functions[_libretto__fund_commands] )) ||
+_libretto__fund_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto fund commands' commands "$@"
+}
+(( $+functions[_libretto__global_commands] )) ||
+_libretto__global_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto global commands' commands "$@"
+}
+(( $+functions[_libretto__help_commands] )) ||
+_libretto__help_commands() {
+    local commands; commands=(
+'about:Short information about Libretto' \
+'archive:Creates an archive of this composer package' \
+'audit:Checks for security vulnerability advisories for installed packages' \
+'browse:Opens the package'\''s repository URL or homepage in your browser' \
+'bump:Increases the lower limit of your composer.json requirements to the currently installed versions' \
+'clear-cache:Clears composer'\''s internal package cache' \
+'cache:list:Lists packages in the cache' \
+'check-platform-reqs:Check that platform requirements are satisfied' \
+'completion:Generate completion script for the specified shell' \
+'config:Sets config options. You can use -g to set global options' \
+'create-project:Creates new project from a package into given directory' \
+'depends:Shows which packages cause the given package to be installed' \
+'diagnose:Diagnoses the system to identify common errors' \
+'dump-autoload:Regenerates the autoloader files' \
+'exec:Executes a vendored binary/script' \
+'fund:Discover how to help fund the maintenance of your dependencies' \
+'global:Allows running commands in the global composer dir (\$\`COMPOSER_HOME\`)' \
+'init:Creates a basic composer.json file in current directory' \
+'install:Installs the project dependencies from the composer.lock file if present, or falls back on the composer.json' \
+'licenses:Shows information about licenses of dependencies' \
+'outdated:Shows a list of locally modified packages' \
+'prohibits:Shows which packages prevent the given package from being installed' \
+'reinstall:Uninstalls and reinstalls the given package names' \
+'remove:Removes a package from the require or require-dev' \
+'repository:Manages repositories (add, remove, list)' \
+'require:Adds required packages to your composer.json and installs them' \
+'run-script:Runs the scripts defined in composer.json' \
+'search:Searches for packages' \
+'self-update:Updates Libretto to the latest version' \
+'show:Shows information about packages' \
+'status:Shows a list of locally modified packages' \
+'suggests:Shows package suggestions' \
+'update:Updates your dependencies to the latest version according to composer.json, and updates the composer.lock file' \
+'validate:Validates a composer.json and composer.lock' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'libretto help commands' commands "$@"
+}
+(( $+functions[_libretto__help__about_commands] )) ||
+_libretto__help__about_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help about commands' commands "$@"
+}
+(( $+functions[_libretto__help__archive_commands] )) ||
+_libretto__help__archive_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help archive commands' commands "$@"
+}
+(( $+functions[_libretto__help__audit_commands] )) ||
+_libretto__help__audit_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help audit commands' commands "$@"
+}
+(( $+functions[_libretto__help__browse_commands] )) ||
+_libretto__help__browse_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help browse commands' commands "$@"
+}
+(( $+functions[_libretto__help__bump_commands] )) ||
+_libretto__help__bump_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help bump commands' commands "$@"
+}
+(( $+functions[_libretto__help__cache:list_commands] )) ||
+_libretto__help__cache:list_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help cache:list commands' commands "$@"
+}
+(( $+functions[_libretto__help__check-platform-reqs_commands] )) ||
+_libretto__help__check-platform-reqs_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help check-platform-reqs commands' commands "$@"
+}
+(( $+functions[_libretto__help__clear-cache_commands] )) ||
+_libretto__help__clear-cache_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help clear-cache commands' commands "$@"
+}
+(( $+functions[_libretto__help__completion_commands] )) ||
+_libretto__help__completion_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help completion commands' commands "$@"
+}
+(( $+functions[_libretto__help__config_commands] )) ||
+_libretto__help__config_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help config commands' commands "$@"
+}
+(( $+functions[_libretto__help__create-project_commands] )) ||
+_libretto__help__create-project_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help create-project commands' commands "$@"
+}
+(( $+functions[_libretto__help__depends_commands] )) ||
+_libretto__help__depends_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help depends commands' commands "$@"
+}
+(( $+functions[_libretto__help__diagnose_commands] )) ||
+_libretto__help__diagnose_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help diagnose commands' commands "$@"
+}
+(( $+functions[_libretto__help__dump-autoload_commands] )) ||
+_libretto__help__dump-autoload_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help dump-autoload commands' commands "$@"
+}
+(( $+functions[_libretto__help__exec_commands] )) ||
+_libretto__help__exec_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help exec commands' commands "$@"
+}
+(( $+functions[_libretto__help__fund_commands] )) ||
+_libretto__help__fund_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help fund commands' commands "$@"
+}
+(( $+functions[_libretto__help__global_commands] )) ||
+_libretto__help__global_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help global commands' commands "$@"
+}
+(( $+functions[_libretto__help__help_commands] )) ||
+_libretto__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help help commands' commands "$@"
+}
+(( $+functions[_libretto__help__init_commands] )) ||
+_libretto__help__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help init commands' commands "$@"
+}
+(( $+functions[_libretto__help__install_commands] )) ||
+_libretto__help__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help install commands' commands "$@"
+}
+(( $+functions[_libretto__help__licenses_commands] )) ||
+_libretto__help__licenses_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help licenses commands' commands "$@"
+}
+(( $+functions[_libretto__help__outdated_commands] )) ||
+_libretto__help__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help outdated commands' commands "$@"
+}
+(( $+functions[_libretto__help__prohibits_commands] )) ||
+_libretto__help__prohibits_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help prohibits commands' commands "$@"
+}
+(( $+functions[_libretto__help__reinstall_commands] )) ||
+_libretto__help__reinstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help reinstall commands' commands "$@"
+}
+(( $+functions[_libretto__help__remove_commands] )) ||
+_libretto__help__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help remove commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository_commands] )) ||
+_libretto__help__repository_commands() {
+    local commands; commands=(
+'add:Add a repository' \
+'remove:Remove a repository' \
+'list:List configured repositories' \
+'enable:Enable a repository' \
+'disable:Disable a repository' \
+    )
+    _describe -t commands 'libretto help repository commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository__add_commands] )) ||
+_libretto__help__repository__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help repository add commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository__disable_commands] )) ||
+_libretto__help__repository__disable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help repository disable commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository__enable_commands] )) ||
+_libretto__help__repository__enable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help repository enable commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository__list_commands] )) ||
+_libretto__help__repository__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help repository list commands' commands "$@"
+}
+(( $+functions[_libretto__help__repository__remove_commands] )) ||
+_libretto__help__repository__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help repository remove commands' commands "$@"
+}
+(( $+functions[_libretto__help__require_commands] )) ||
+_libretto__help__require_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help require commands' commands "$@"
+}
+(( $+functions[_libretto__help__run-script_commands] )) ||
+_libretto__help__run-script_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help run-script commands' commands "$@"
+}
+(( $+functions[_libretto__help__search_commands] )) ||
+_libretto__help__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help search commands' commands "$@"
+}
+(( $+functions[_libretto__help__self-update_commands] )) ||
+_libretto__help__self-update_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help self-update commands' commands "$@"
+}
+(( $+functions[_libretto__help__show_commands] )) ||
+_libretto__help__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help show commands' commands "$@"
+}
+(( $+functions[_libretto__help__status_commands] )) ||
+_libretto__help__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help status commands' commands "$@"
+}
+(( $+functions[_libretto__help__suggests_commands] )) ||
+_libretto__help__suggests_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help suggests commands' commands "$@"
+}
+(( $+functions[_libretto__help__update_commands] )) ||
+_libretto__help__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help update commands' commands "$@"
+}
+(( $+functions[_libretto__help__validate_commands] )) ||
+_libretto__help__validate_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto help validate commands' commands "$@"
+}
+(( $+functions[_libretto__init_commands] )) ||
+_libretto__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto init commands' commands "$@"
+}
+(( $+functions[_libretto__install_commands] )) ||
+_libretto__install_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto install commands' commands "$@"
+}
+(( $+functions[_libretto__licenses_commands] )) ||
+_libretto__licenses_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto licenses commands' commands "$@"
+}
+(( $+functions[_libretto__outdated_commands] )) ||
+_libretto__outdated_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto outdated commands' commands "$@"
+}
+(( $+functions[_libretto__prohibits_commands] )) ||
+_libretto__prohibits_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto prohibits commands' commands "$@"
+}
+(( $+functions[_libretto__reinstall_commands] )) ||
+_libretto__reinstall_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto reinstall commands' commands "$@"
+}
+(( $+functions[_libretto__remove_commands] )) ||
+_libretto__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto remove commands' commands "$@"
+}
+(( $+functions[_libretto__repository_commands] )) ||
+_libretto__repository_commands() {
+    local commands; commands=(
+'add:Add a repository' \
+'remove:Remove a repository' \
+'list:List configured repositories' \
+'enable:Enable a repository' \
+'disable:Disable a repository' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'libretto repository commands' commands "$@"
+}
+(( $+functions[_libretto__repository__add_commands] )) ||
+_libretto__repository__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository add commands' commands "$@"
+}
+(( $+functions[_libretto__repository__disable_commands] )) ||
+_libretto__repository__disable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository disable commands' commands "$@"
+}
+(( $+functions[_libretto__repository__enable_commands] )) ||
+_libretto__repository__enable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository enable commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help_commands] )) ||
+_libretto__repository__help_commands() {
+    local commands; commands=(
+'add:Add a repository' \
+'remove:Remove a repository' \
+'list:List configured repositories' \
+'enable:Enable a repository' \
+'disable:Disable a repository' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'libretto repository help commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__add_commands] )) ||
+_libretto__repository__help__add_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help add commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__disable_commands] )) ||
+_libretto__repository__help__disable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help disable commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__enable_commands] )) ||
+_libretto__repository__help__enable_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help enable commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__help_commands] )) ||
+_libretto__repository__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help help commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__list_commands] )) ||
+_libretto__repository__help__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help list commands' commands "$@"
+}
+(( $+functions[_libretto__repository__help__remove_commands] )) ||
+_libretto__repository__help__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository help remove commands' commands "$@"
+}
+(( $+functions[_libretto__repository__list_commands] )) ||
+_libretto__repository__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository list commands' commands "$@"
+}
+(( $+functions[_libretto__repository__remove_commands] )) ||
+_libretto__repository__remove_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto repository remove commands' commands "$@"
+}
+(( $+functions[_libretto__require_commands] )) ||
+_libretto__require_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto require commands' commands "$@"
+}
+(( $+functions[_libretto__run-script_commands] )) ||
+_libretto__run-script_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto run-script commands' commands "$@"
+}
+(( $+functions[_libretto__search_commands] )) ||
+_libretto__search_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto search commands' commands "$@"
+}
+(( $+functions[_libretto__self-update_commands] )) ||
+_libretto__self-update_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto self-update commands' commands "$@"
+}
+(( $+functions[_libretto__show_commands] )) ||
+_libretto__show_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto show commands' commands "$@"
+}
+(( $+functions[_libretto__status_commands] )) ||
+_libretto__status_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto status commands' commands "$@"
+}
+(( $+functions[_libretto__suggests_commands] )) ||
+_libretto__suggests_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto suggests commands' commands "$@"
+}
+(( $+functions[_libretto__update_commands] )) ||
+_libretto__update_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto update commands' commands "$@"
+}
+(( $+functions[_libretto__validate_commands] )) ||
+_libretto__validate_commands() {
+    local commands; commands=()
+    _describe -t commands 'libretto validate commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_libretto" ]; then
+    _libretto "$@"
+else
+    compdef _libretto libretto
+fi

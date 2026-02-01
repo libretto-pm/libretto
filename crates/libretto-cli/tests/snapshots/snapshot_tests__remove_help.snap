@@ -1,0 +1,67 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Remove command help
+---
+Removes a package from the require or require-dev
+
+Usage: libretto remove [OPTIONS] <PACKAGE>...
+
+Arguments:
+  <PACKAGE>...
+          Packages to remove
+
+Options:
+  -D, --dev
+          Remove from dev dependencies
+
+  -q, --quiet
+          Do not output any message
+
+      --ansi
+          Force ANSI output (colors and formatting)
+
+      --no-update
+          Don't update dependencies after removing
+
+      --no-ansi
+          Disable ANSI output (colors and formatting)
+
+      --no-update-with-dependencies
+          Don't remove unused dependencies
+
+  -n, --no-interaction
+          Do not ask any interactive question
+
+      --profile
+          Display timing and memory usage information
+
+      --no-plugins
+          Disables all plugins
+
+      --no-scripts
+          Skips execution of scripts defined in composer.json
+
+  -d, --working-dir <DIR>
+          Use the specified directory as working directory
+
+      --no-cache
+          Prevent use of the cache
+
+      --format <FORMAT>
+          Output format (text, json, or table)
+
+          Possible values:
+          - table: Human-readable table format
+          - json:  JSON format
+          - text:  Plain text format
+          
+          [default: text]
+
+  -v, --verbose...
+          Increase the verbosity of messages: -v for verbose, -vv for very verbose, -vvv for debug
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

@@ -1,0 +1,31 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: About command output
+---
+
+    __    _ __              __  __
+   / /   (_) /_  ________  / /_/ /_____
+  / /   / / __ \/ ___/ _ \/ __/ __/ __ \
+ / /___/ / /_/ / /  /  __/ /_/ /_/ /_/ /
+/_____/_/_.___/_/   \___/\__/\__/\____/
+
+
+  Libretto X.X.X
+  A high-performance Composer-compatible package manager
+
+Features
+  • Drop-in replacement for Composer
+  • Parallel package downloads with HTTP/2 multiplexing
+  • SIMD-accelerated JSON parsing and hashing
+  • Multi-tier caching with zstd compression
+  • PubGrub-based dependency resolution (from uv project)
+  • Zero-copy deserialization for cached data
+  • Cross-platform support (Linux, macOS, Windows)
+
+Links
+  Repository: https:/path/to/libretto
+  Documentation: https://libretto.dev/docs
+  Issues: https:/path/to/libretto/issues
+
+License
+  MIT OR Apache-2.0

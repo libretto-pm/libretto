@@ -13,7 +13,7 @@ pub struct ProhibitsArgs {
     pub package: String,
 
     /// Version to check
-    #[arg(value_name = "VERSION")]
+    #[arg(value_name = "VERSION", name = "pkg_version")]
     pub version: Option<String>,
 
     /// Recursively resolve up to the root packages

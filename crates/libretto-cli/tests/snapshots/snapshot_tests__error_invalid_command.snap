@@ -1,0 +1,9 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Error with invalid command
+---
+error: unrecognized subcommand 'nonexistent-command'
+
+Usage: libretto [OPTIONS] <COMMAND>
+
+For more information, try '--help'.

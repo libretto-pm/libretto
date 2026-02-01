@@ -1,0 +1,108 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Install command help
+---
+Installs the project dependencies from the composer.lock file if present, or falls back on the
+composer.json
+
+Usage: libretto install [OPTIONS]
+
+Options:
+      --no-dev
+          Skip dev dependencies
+
+  -q, --quiet
+          Do not output any message
+
+      --ansi
+          Force ANSI output (colors and formatting)
+
+      --prefer-dist
+          Prefer dist packages (archives)
+
+      --no-ansi
+          Disable ANSI output (colors and formatting)
+
+      --prefer-source
+          Prefer source packages (VCS)
+
+      --dry-run
+          Dry run (don't install anything)
+
+  -n, --no-interaction
+          Do not ask any interactive question
+
+      --ignore-platform-reqs
+          Ignore platform requirements
+
+      --profile
+          Display timing and memory usage information
+
+      --ignore-platform-req <REQ>
+          Ignore specific platform requirements (e.g., php, ext-*)
+
+      --no-plugins
+          Disables all plugins
+
+  -o, --optimize-autoloader
+          Optimize autoloader
+
+  -a, --classmap-authoritative
+          Generate classmap for PSR-0/4 autoloading
+
+  -d, --working-dir <DIR>
+          Use the specified directory as working directory
+
+      --apcu-autoloader
+          `APCu` autoloader caching
+
+      --no-cache
+          Prevent use of the cache
+
+      --format <FORMAT>
+          Output format (text, json, or table)
+
+          Possible values:
+          - table: Human-readable table format
+          - json:  JSON format
+          - text:  Plain text format
+          
+          [default: text]
+
+      --no-scripts
+          Skip scripts execution
+
+      --prefer-lowest
+          Prefer lowest versions (for testing)
+
+  -v, --verbose...
+          Increase the verbosity of messages: -v for verbose, -vv for very verbose, -vvv for debug
+
+      --prefer-stable
+          Prefer stable versions
+
+      --minimum-stability <STABILITY>
+          Minimum stability (dev, alpha, beta, RC, stable)
+
+      --no-progress
+          Disable progress bar
+
+      --concurrency <CONCURRENCY>
+          Maximum concurrent HTTP requests
+          
+          [default: 64]
+
+      --audit
+          Run security audit after installation
+
+      --fail-on-audit
+          Fail installation if security vulnerabilities are found
+
+      --verify-checksums
+          Verify package checksums and fail on mismatch
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

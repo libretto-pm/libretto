@@ -1,0 +1,5 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Error with invalid JSON
+---
+

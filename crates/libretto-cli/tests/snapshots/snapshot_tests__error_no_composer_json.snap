@@ -1,0 +1,6 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Error when composer.json is missing
+---
+✘ No composer.json found in current directory.
+Run 'libretto init' to create one.

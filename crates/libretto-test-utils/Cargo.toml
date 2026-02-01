@@ -1,0 +1,82 @@
+[package]
+name = "libretto-test-utils"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Comprehensive testing utilities for Libretto"
+publish = false
+
+[dependencies]
+# Internal crates (for type definitions and utilities)
+libretto-core = { workspace = true }
+libretto-lockfile = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "fs", "process"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+sonic-rs = { workspace = true }
+
+# Temporary files and directories
+tempfile = { workspace = true }
+assert_fs = { workspace = true }
+
+# HTTP mocking
+wiremock = { workspace = true }
+httpmock = { workspace = true }
+
+# Assertions
+pretty_assertions = { workspace = true }
+predicates = { workspace = true }
+
+# Random data generation
+rand = { workspace = true }
+fake = { workspace = true }
+
+# Property-based testing
+proptest = { workspace = true }
+quickcheck = { workspace = true }
+arbitrary = { workspace = true }
+
+# Snapshot testing
+insta = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# URL handling
+url = { workspace = true }
+
+# File system
+walkdir = { workspace = true }
+
+# Time
+chrono = { workspace = true }
+
+# Async utilities
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+# Git operations (for VCS test fixtures)
+gix = { workspace = true }
+
+# Archive creation for mock servers
+zip = { workspace = true }
+
+# Hex encoding
+hex = { workspace = true }
+
+# HTTP client for tests
+reqwest = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+test-case = { workspace = true }
+criterion = { workspace = true }
+
+[lints]
+workspace = true

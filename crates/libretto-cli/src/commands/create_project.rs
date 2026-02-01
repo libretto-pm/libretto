@@ -18,7 +18,7 @@ pub struct CreateProjectArgs {
     pub directory: Option<String>,
 
     /// Version constraint to use
-    #[arg(value_name = "VERSION")]
+    #[arg(value_name = "VERSION", name = "pkg_version")]
     pub version: Option<String>,
 
     /// Minimum stability to allow (stable, RC, beta, alpha, dev)

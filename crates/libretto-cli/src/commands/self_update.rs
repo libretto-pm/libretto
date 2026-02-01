@@ -8,7 +8,7 @@ use sonic_rs::JsonValueTrait;
 #[derive(Args, Debug, Clone)]
 pub struct SelfUpdateArgs {
     /// Update to a specific version
-    #[arg(value_name = "VERSION")]
+    #[arg(value_name = "VERSION", name = "target_version")]
     pub version: Option<String>,
 
     /// Rollback to the previous version

@@ -1,0 +1,54 @@
+---
+source: crates/libretto-cli/tests/snapshot_tests.rs
+description: Diagnose command help
+---
+Diagnoses the system to identify common errors
+
+Usage: libretto diagnose [OPTIONS]
+
+Options:
+  -q, --quiet
+          Do not output any message
+
+      --ansi
+          Force ANSI output (colors and formatting)
+
+      --no-ansi
+          Disable ANSI output (colors and formatting)
+
+  -n, --no-interaction
+          Do not ask any interactive question
+
+      --profile
+          Display timing and memory usage information
+
+      --no-plugins
+          Disables all plugins
+
+      --no-scripts
+          Skips execution of scripts defined in composer.json
+
+  -d, --working-dir <DIR>
+          Use the specified directory as working directory
+
+      --no-cache
+          Prevent use of the cache
+
+      --format <FORMAT>
+          Output format (text, json, or table)
+
+          Possible values:
+          - table: Human-readable table format
+          - json:  JSON format
+          - text:  Plain text format
+          
+          [default: text]
+
+  -v, --verbose...
+          Increase the verbosity of messages: -v for verbose, -vv for very verbose, -vvv for debug
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version

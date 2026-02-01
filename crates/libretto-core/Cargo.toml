@@ -32,6 +32,12 @@ bytes = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+proptest = { workspace = true }
+test-case = { workspace = true }
+rstest = { workspace = true }
+pretty_assertions = { workspace = true }
+insta = { workspace = true }
+rand = { workspace = true }
 
 [[bench]]
 name = "json_bench"
