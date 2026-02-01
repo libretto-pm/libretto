@@ -255,7 +255,7 @@ Contributions welcome! Please open an issue first for major changes.
 
 ## License
 
-Dual-licensed under MIT and Apache 2.0.
+Licensed under MIT.
 
 ## Acknowledgments
 
