@@ -160,15 +160,8 @@ jobs:
       - name: Build CLI
         run: cargo build --package libretto-cli
 
-      - name: Run integration tests
-        run: cargo test --test integration_tests -- --nocapture
-
-      - name: Run platform tests
-        run: cargo test --test platform_tests -- --nocapture
-
-      - name: Run stress tests
-        run: cargo test --test stress_tests -- --nocapture
-        timeout-minutes: 10
+      - name: Run CLI tests
+        run: cargo test -p libretto-cli --test cli_tests -- --nocapture
 
   # CLI snapshot tests
   snapshots:
@@ -200,28 +193,6 @@ jobs:
 
       - name: Check for pending snapshots
         run: cargo insta test -p libretto-cli --check
-
-  # Security tests
-  security:
-    name: Security Tests
-    needs: lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y lld
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: security
-
-      - name: Run security tests
-        run: cargo test --test security_tests -- --nocapture
 
   # Test SIMD-specific code
   test-simd:

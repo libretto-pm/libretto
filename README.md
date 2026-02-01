@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/libretto-pm/libretto/actions"><img src="https://github.com/libretto-pm/libretto/workflows/CI/badge.svg" alt="CI Status"></a>
-  <a href="https://github.com/libretto-pm/libretto/blob/master/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/libretto-pm/libretto/blob/master/LICENSE-MIT">
   <a href="https://github.com/libretto-pm/libretto"><img src="https://img.shields.io/badge/rust-1.89%2B-orange.svg" alt="Rust Version"></a>
 </p>
 
