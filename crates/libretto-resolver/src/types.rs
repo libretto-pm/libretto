@@ -42,6 +42,12 @@ pub struct ResolvedPackage {
     pub require_dev: Option<Vec<(String, String)>>,
     /// Package suggest (for lock file).
     pub suggest: Option<Vec<(String, String)>>,
+    /// Packages this package provides.
+    pub provide: Option<Vec<(String, String)>>,
+    /// Packages this package replaces.
+    pub replace: Option<Vec<(String, String)>>,
+    /// Packages this package conflicts with.
+    pub conflict: Option<Vec<(String, String)>>,
     /// Package type (library, project, etc.).
     pub package_type: Option<String>,
     /// Package description.

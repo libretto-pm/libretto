@@ -2,6 +2,9 @@
 //!
 //! High-performance package installation using parallel resolution and downloads.
 
+use crate::auth_manager::{
+    AuthManager, GitHubRateLimitInfo, is_github_rate_limit_error, parse_rate_limit_headers,
+};
 use crate::cas_cache;
 use crate::fetcher::Fetcher;
 use crate::installer_paths::InstallerPaths;
@@ -18,6 +21,7 @@ use anyhow::{Context, Result, bail};
 use clap::Args;
 use futures::stream::{FuturesUnordered, StreamExt};
 use libretto_audit::Auditor;
+use libretto_config::auth::Credential;
 use libretto_core::PackageId;
 use libretto_resolver::Stability;
 use libretto_resolver::turbo::{TurboConfig, TurboResolver};
@@ -105,6 +109,14 @@ pub struct InstallArgs {
     /// Verify package checksums and fail on mismatch
     #[arg(long)]
     pub verify_checksums: bool,
+
+    /// Specify PHP version to use for this operation
+    #[arg(long, value_name = "VERSION")]
+    pub php_version: Option<String>,
+
+    /// Skip PHP version requirement check
+    #[arg(long)]
+    pub no_php_check: bool,
 }
 
 /// Run the install command.
@@ -698,6 +710,19 @@ async fn install_packages(
 ) -> Result<()> {
     let start = Instant::now();
 
+    // Initialize auth manager and check for existing GitHub token
+    let mut auth_manager = AuthManager::with_project_root(Some(base_dir));
+    let github_token = auth_manager
+        .get_credential("github.com")
+        .and_then(|c| match c {
+            Credential::GitHubOAuth(token) => Some(token),
+            _ => None,
+        });
+
+    if github_token.is_some() {
+        debug!("Using existing GitHub OAuth token");
+    }
+
     // Build HTTP client with optimized settings
     let client = reqwest::Client::builder()
         .pool_max_idle_per_host(100)
@@ -818,11 +843,22 @@ async fn install_packages(
     let mut errors: Vec<String> = Vec::new();
     let verify_checksums = args.verify_checksums;
 
+    // Track credentials for retry - convert GitHub token to Credential if present
+    let mut credential_for_retry: Option<Credential> = github_token.map(Credential::GitHubOAuth);
+    let mut rate_limited_packages: Vec<(String, String, String, PathBuf, Option<String>)> =
+        Vec::new();
+
     while !pending.is_empty() || !in_flight.is_empty() {
         while in_flight.len() < max_concurrent && !pending.is_empty() {
             let (name, version, url, dest, shasum) = pending.pop().unwrap();
             let client = client.clone();
             let total_bytes = Arc::clone(&total_bytes);
+
+            // Get credential for this URL's domain
+            let credential = credential_for_retry.clone().or_else(|| {
+                extract_domain_from_url(&url)
+                    .and_then(|domain| auth_manager.get_credential(&domain))
+            });
 
             // Update progress with current package
             if let Some(p) = progress {
@@ -830,7 +866,7 @@ async fn install_packages(
             }
 
             in_flight.push(async move {
-                let result = download_and_extract(
+                let result = download_and_extract_with_credential(
                     &client,
                     &name,
                     &version,
@@ -839,13 +875,14 @@ async fn install_packages(
                     &total_bytes,
                     shasum.as_deref(),
                     verify_checksums,
+                    credential.as_ref(),
                 )
                 .await;
-                (name, url, result)
+                (name, version, url, dest, shasum, result)
             });
         }
 
-        if let Some((name, url, result)) = in_flight.next().await {
+        if let Some((name, version, url, dest, shasum, result)) = in_flight.next().await {
             match result {
                 Ok(dest_path) => {
                     completed.fetch_add(1, Ordering::Relaxed);
@@ -856,10 +893,121 @@ async fn install_packages(
                     let _ = cas_cache::store_in_cache(&url, &dest_path);
                 }
                 Err(e) => {
-                    failed_count.fetch_add(1, Ordering::Relaxed);
-                    errors.push(format!("{name}: {e}"));
+                    let error_str = e.to_string();
+                    // Check if this is an authentication/rate limit error that can be retried
+                    let is_github_rate_limit = error_str.contains("rate limit")
+                        && (url.contains("github.com") || url.contains("codeload.github.com"));
+                    let is_auth_failure = error_str.contains("HTTP 401")
+                        || error_str.contains("HTTP 403")
+                        || error_str.contains("Unauthorized")
+                        || error_str.contains("Forbidden");
+
+                    if is_github_rate_limit || is_auth_failure {
+                        // Queue for retry after getting credentials
+                        rate_limited_packages.push((name, version, url, dest, shasum));
+                    } else {
+                        failed_count.fetch_add(1, Ordering::Relaxed);
+                        errors.push(format!("{name}: {e}"));
+                    }
                 }
             }
+        }
+    }
+
+    // Handle packages that failed due to authentication/rate limit issues
+    if !rate_limited_packages.is_empty() && credential_for_retry.is_none() {
+        // Detect auth type based on first URL's domain
+        let first_url = &rate_limited_packages[0].2;
+        let (domain, auth_type) = detect_auth_type_for_url(first_url);
+
+        let reason = if first_url.contains("github.com") {
+            let rate_limit_info = GitHubRateLimitInfo {
+                url: first_url.clone(),
+                limit: 60,
+                reset: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() + 3600)
+                    .unwrap_or(0),
+            };
+            format!(
+                "GitHub API limit (60 calls/hr) is exhausted, could not fetch {}.\n\
+                 You can also wait until {} for the rate limit to reset.",
+                rate_limit_info.url,
+                rate_limit_info.reset_time_string()
+            )
+        } else {
+            format!(
+                "Authentication required for {}.\n\
+                 Please provide credentials to access this repository.",
+                domain
+            )
+        };
+
+        match auth_manager.prompt_for_auth_type(&domain, auth_type, &reason) {
+            Ok(Some(cred)) => {
+                let _ = credential_for_retry.insert(cred.clone());
+                info(&format!(
+                    "Retrying {} packages with credentials...",
+                    rate_limited_packages.len()
+                ));
+
+                // Retry downloads with the new credential
+                for (name, version, url, dest, shasum) in rate_limited_packages {
+                    if let Some(p) = progress {
+                        p.set_current(&name);
+                    }
+
+                    match download_and_extract_with_credential(
+                        &client,
+                        &name,
+                        &version,
+                        &url,
+                        &dest,
+                        &total_bytes,
+                        shasum.as_deref(),
+                        verify_checksums,
+                        Some(&cred),
+                    )
+                    .await
+                    {
+                        Ok(dest_path) => {
+                            completed.fetch_add(1, Ordering::Relaxed);
+                            if let Some(p) = progress {
+                                p.inc_completed();
+                                p.add_bytes(total_bytes.load(Ordering::Relaxed));
+                            }
+                            let _ = cas_cache::store_in_cache(&url, &dest_path);
+                        }
+                        Err(e) => {
+                            failed_count.fetch_add(1, Ordering::Relaxed);
+                            errors.push(format!("{name}: {e}"));
+                        }
+                    }
+                }
+            }
+            Ok(None) => {
+                // User declined to provide credentials, mark all as failed
+                for (name, _, url, _, _) in rate_limited_packages {
+                    failed_count.fetch_add(1, Ordering::Relaxed);
+                    errors.push(format!("{name}: Authentication required for {url}"));
+                }
+            }
+            Err(e) => {
+                warning(&format!("Failed to prompt for credentials: {e}"));
+                for (name, _, url, _, _) in rate_limited_packages {
+                    failed_count.fetch_add(1, Ordering::Relaxed);
+                    errors.push(format!("{name}: Authentication required for {url}"));
+                }
+            }
+        }
+    } else if !rate_limited_packages.is_empty() {
+        // We had credentials but still failed - credentials may be invalid
+        warning(
+            "Authentication failed despite having credentials. They may be invalid or expired.",
+        );
+        for (name, _, url, _, _) in rate_limited_packages {
+            failed_count.fetch_add(1, Ordering::Relaxed);
+            errors.push(format!("{name}: Authentication failed for {url}"));
         }
     }
 
@@ -908,7 +1056,17 @@ async fn install_packages(
     Ok(())
 }
 
-async fn download_and_extract(
+/// Download and extract a package archive with credential-based authentication.
+///
+/// Supports all Composer authentication types:
+/// - GitHub OAuth tokens
+/// - GitLab OAuth and private tokens
+/// - Bitbucket OAuth
+/// - HTTP Basic authentication
+/// - Bearer tokens
+/// - Forgejo/Gitea tokens
+/// - Custom HTTP headers
+async fn download_and_extract_with_credential(
     client: &reqwest::Client,
     name: &str,
     _version: &str,
@@ -917,15 +1075,41 @@ async fn download_and_extract(
     total_bytes: &AtomicU64,
     expected_shasum: Option<&str>,
     verify_checksums: bool,
+    credential: Option<&Credential>,
 ) -> Result<PathBuf> {
-    let response = client
-        .get(url)
+    let mut request = client.get(url);
+
+    // Apply credential-based authentication
+    if let Some(cred) = credential {
+        request = apply_credential_to_request(request, cred, url);
+    }
+
+    let response = request
         .send()
         .await
         .with_context(|| format!("Failed to fetch {name}"))?;
 
-    if !response.status().is_success() {
-        anyhow::bail!("HTTP {}", response.status());
+    let status = response.status();
+
+    // Check for GitHub rate limit
+    if is_github_rate_limit_error(url, status.as_u16()) {
+        let rate_limit =
+            parse_rate_limit_headers(url, response.headers()).unwrap_or(GitHubRateLimitInfo {
+                url: url.to_string(),
+                limit: 60,
+                reset: 0,
+            });
+
+        anyhow::bail!(
+            "GitHub rate limit exceeded for {}: {} calls/hr limit, resets at {}",
+            name,
+            rate_limit.limit,
+            rate_limit.reset_time_string()
+        );
+    }
+
+    if !status.is_success() {
+        anyhow::bail!("HTTP {}", status);
     }
 
     let bytes = response
@@ -1056,6 +1240,102 @@ fn extract_zip(zip_path: &std::path::Path, dest: &std::path::Path) -> Result<()>
     }
 
     Ok(())
+}
+
+/// Apply authentication credentials to an HTTP request.
+///
+/// Handles all Composer-supported authentication types:
+/// - GitHub OAuth: Bearer token for github.com URLs
+/// - GitLab OAuth/Token: Bearer token for gitlab URLs
+/// - Bitbucket OAuth: Basic auth with consumer key/secret
+/// - HTTP Basic: Basic auth header
+/// - Bearer: Generic bearer token
+/// - Forgejo: Token-based auth
+/// - Custom Headers: Raw header injection
+fn apply_credential_to_request(
+    request: reqwest::RequestBuilder,
+    credential: &Credential,
+    url: &str,
+) -> reqwest::RequestBuilder {
+    match credential {
+        Credential::GitHubOAuth(token) => {
+            // Only apply to GitHub URLs
+            if url.contains("github.com") || url.contains("api.github.com") {
+                request.header("Authorization", format!("Bearer {token}"))
+            } else {
+                request
+            }
+        }
+        Credential::GitLabOAuth(token) | Credential::GitLabToken(token) => {
+            // Apply to GitLab URLs
+            if url.contains("gitlab") {
+                request.header("Authorization", format!("Bearer {token}"))
+            } else {
+                request
+            }
+        }
+        Credential::BitbucketOAuth {
+            consumer_key,
+            consumer_secret,
+        } => {
+            // Bitbucket uses Basic auth with OAuth credentials
+            request.basic_auth(consumer_key, Some(consumer_secret))
+        }
+        Credential::HttpBasic { username, password } => {
+            request.basic_auth(username, Some(password))
+        }
+        Credential::Bearer(token) => request.header("Authorization", format!("Bearer {token}")),
+        Credential::ForgejoToken { token, .. } => {
+            request.header("Authorization", format!("token {token}"))
+        }
+        Credential::CustomHeaders(headers) => {
+            let mut req = request;
+            for header in headers {
+                // Parse "Header-Name: value" format
+                if let Some((name, value)) = header.split_once(':') {
+                    req = req.header(name.trim(), value.trim());
+                }
+            }
+            req
+        }
+    }
+}
+
+/// Extract domain from URL for credential lookup.
+fn extract_domain_from_url(url: &str) -> Option<String> {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(String::from))
+}
+
+/// Detect the appropriate authentication type based on URL domain.
+fn detect_auth_type_for_url(url: &str) -> (String, crate::auth_manager::PromptableAuthType) {
+    use crate::auth_manager::PromptableAuthType;
+
+    let domain = extract_domain_from_url(url).unwrap_or_else(|| "unknown".to_string());
+    let domain_lower = domain.to_lowercase();
+
+    let auth_type = if domain_lower.contains("github.com") {
+        PromptableAuthType::GitHubOAuth
+    } else if domain_lower == "gitlab.com" {
+        // GitLab.com prefers OAuth tokens
+        PromptableAuthType::GitLabOAuth
+    } else if domain_lower.contains("gitlab") {
+        // Self-hosted GitLab instances typically use private tokens
+        PromptableAuthType::GitLabToken
+    } else if domain_lower.contains("bitbucket") {
+        PromptableAuthType::BitbucketOAuth
+    } else if domain_lower.contains("codeberg.org")
+        || domain_lower.contains("forgejo")
+        || domain_lower.contains("gitea")
+    {
+        PromptableAuthType::ForgejoToken
+    } else {
+        // Default to HTTP Basic for unknown domains (private Packagist, Satis, etc.)
+        PromptableAuthType::HttpBasic
+    };
+
+    (domain, auth_type)
 }
 
 fn generate_lock_file(

@@ -159,6 +159,12 @@ zip = { version = "2.0", default-features = false, features = [
 ] }
 tar = "0.4"
 flate2 = "1.0"
+xz2 = "0.1"
+bzip2 = "0.4"
+zstd = "0.13"
+
+# CPU detection
+num_cpus = "1.16"
 
 # Git operations
 gix = { version = "0.78", default-features = false, features = [

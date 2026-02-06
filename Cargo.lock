@@ -1681,6 +1681,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "5.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44c45a9d03d6676652bcb5e724c7e988de1acad23a711b5217ab9cbecbec2225"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
 name = "dirs-next"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2296,6 +2305,16 @@ checksum = "eaf57c49a95fd1fe24b90b3033bee6dc7e8f1288d51494cb44e627c295e38542"
 dependencies = [
  "rustversion",
  "typenum",
+]
+
+[[package]]
+name = "gethostname"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc3655aa6818d65bc620d6911f05aa7b6aeb596291e1e9f79e52df85583d1e30"
+dependencies = [
+ "rustix 0.38.44",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -4065,6 +4084,7 @@ dependencies = [
  "keyring 2.3.3",
  "libc",
  "libretto-core",
+ "libretto-resolver",
  "parking_lot",
  "reqwest 0.12.28",
  "rustix 0.38.44",
@@ -4194,8 +4214,10 @@ dependencies = [
  "dashmap",
  "dialoguer",
  "directories",
+ "dirs",
  "flate2",
  "futures",
+ "gethostname",
  "hex",
  "indicatif",
  "insta",
@@ -4203,6 +4225,7 @@ dependencies = [
  "libretto-audit",
  "libretto-autoloader",
  "libretto-cache",
+ "libretto-config",
  "libretto-core",
  "libretto-downloader",
  "libretto-lockfile",

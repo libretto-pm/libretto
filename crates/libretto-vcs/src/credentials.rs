@@ -441,9 +441,9 @@ impl CredentialManager {
         let input = format!("protocol={protocol}\nhost={host}\npath={path}\n");
 
         // Run the credential helper
-        let helper_cmd = if helper.starts_with('!') {
+        let helper_cmd = if let Some(stripped) = helper.strip_prefix('!') {
             // Shell command
-            &helper[1..]
+            stripped
         } else {
             &helper
         };

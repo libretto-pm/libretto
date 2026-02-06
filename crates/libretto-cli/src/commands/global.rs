@@ -166,6 +166,8 @@ async fn run_subcommand(command: &str, args: &[String]) -> Result<()> {
                 audit: args.contains(&"--audit".to_string()),
                 fail_on_audit: args.contains(&"--fail-on-audit".to_string()),
                 verify_checksums: args.contains(&"--verify-checksums".to_string()),
+                php_version: None,
+                no_php_check: false,
             };
 
             commands::install::run(install_args).await
@@ -177,8 +179,13 @@ async fn run_subcommand(command: &str, args: &[String]) -> Result<()> {
                 package,
                 installed: args.contains(&"--installed".to_string()),
                 available: args.contains(&"--available".to_string()),
-                all: args.contains(&"--all".to_string()) || args.contains(&"-a".to_string()),
+                all: args.contains(&"--all".to_string()) || args.contains(&"-A".to_string()),
                 tree: args.contains(&"--tree".to_string()) || args.contains(&"-t".to_string()),
+                name_only: args.contains(&"--name-only".to_string())
+                    || args.contains(&"-N".to_string()),
+                path: args.contains(&"--path".to_string()) || args.contains(&"-P".to_string()),
+                self_pkg: args.contains(&"--self".to_string()) || args.contains(&"-s".to_string()),
+                version: None,
             };
 
             commands::show::run(show_args).await

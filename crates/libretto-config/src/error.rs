@@ -196,6 +196,11 @@ pub enum ConfigError {
         /// File path.
         path: PathBuf,
     },
+
+    /// Generic error for other cases.
+    #[error("{0}")]
+    #[diagnostic(code(config::other))]
+    Other(String),
 }
 
 impl ConfigError {

@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 libretto-core = { workspace = true }
+libretto-resolver = { workspace = true }
 tokio = { workspace = true, features = ["fs", "process"] }
 reqwest = { workspace = true }
 serde = { workspace = true }

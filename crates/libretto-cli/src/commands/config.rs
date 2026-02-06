@@ -1,7 +1,9 @@
 //! Config command - manage configuration.
 
+use crate::auth_manager::AuthManager;
 use anyhow::{Context, Result};
 use clap::Args;
+use libretto_config::auth::CredentialStore;
 use sonic_rs::{JsonContainerTrait, JsonValueMutTrait, JsonValueTrait};
 use std::path::PathBuf;
 
@@ -45,6 +47,22 @@ pub struct ConfigArgs {
     pub absolute: bool,
 }
 
+/// Auth key prefixes that should be handled by the auth system
+const AUTH_PREFIXES: &[&str] = &[
+    "github-oauth",
+    "gitlab-oauth",
+    "gitlab-token",
+    "bitbucket-oauth",
+    "http-basic",
+    "bearer",
+    "forgejo-token",
+];
+
+/// Check if a key is an auth configuration key
+fn is_auth_key(key: &str) -> bool {
+    AUTH_PREFIXES.iter().any(|prefix| key.starts_with(prefix))
+}
+
 /// Run the config command
 pub async fn run(args: ConfigArgs) -> Result<()> {
     use crate::output::{header, info, success};
@@ -64,7 +82,16 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
     // Handle list mode
     if args.list {
         header("Configuration");
-        return list_config(&config_path, args.global);
+        list_config(&config_path, args.global)?;
+
+        // Also list auth config if global
+        if args.global || args.auth {
+            println!();
+            header("Authentication");
+            list_auth_config()?;
+        }
+
+        return Ok(());
     }
 
     // Need a key for other operations
@@ -74,6 +101,11 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
         header("Configuration");
         return list_config(&config_path, args.global);
     };
+
+    // Handle auth keys separately
+    if is_auth_key(key) || args.auth {
+        return handle_auth_config(key, args.value.as_deref(), args.unset, args.global);
+    }
 
     // Handle unset
     if args.unset {
@@ -94,6 +126,233 @@ pub async fn run(args: ConfigArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Handle authentication configuration
+fn handle_auth_config(key: &str, value: Option<&str>, unset: bool, global: bool) -> Result<()> {
+    use crate::output::{info, success, warning};
+
+    let project_root = if global {
+        None
+    } else {
+        Some(std::env::current_dir()?)
+    };
+
+    let mut auth_manager = AuthManager::with_project_root(project_root.as_deref());
+
+    // Parse the key: "github-oauth.github.com" -> ("github-oauth", "github.com")
+    let parts: Vec<&str> = key.splitn(2, '.').collect();
+
+    if parts.len() < 2 {
+        anyhow::bail!(
+            "Invalid auth key format. Expected: <auth-type>.<domain>\n\
+             Examples:\n\
+             - github-oauth.github.com\n\
+             - gitlab-token.gitlab.com\n\
+             - http-basic.repo.example.org\n\
+             - bitbucket-oauth.bitbucket.org\n\
+             - forgejo-token.codeberg.org"
+        );
+    }
+
+    let auth_type = parts[0];
+    let domain = parts[1];
+
+    if unset {
+        // Remove credentials for domain
+        auth_manager.store_mut().config_mut().remove_domain(domain);
+        auth_manager.save()?;
+        success(&format!("Removed credentials for {domain}"));
+        return Ok(());
+    }
+
+    match value {
+        Some(val) => {
+            // Set the credential
+            match auth_type {
+                "github-oauth" => {
+                    auth_manager
+                        .store_mut()
+                        .config_mut()
+                        .set_github_oauth(domain, val);
+                }
+                "gitlab-oauth" => {
+                    auth_manager
+                        .store_mut()
+                        .config_mut()
+                        .set_gitlab_oauth(domain, val);
+                }
+                "gitlab-token" => {
+                    auth_manager
+                        .store_mut()
+                        .config_mut()
+                        .set_gitlab_token(domain, val);
+                }
+                "bearer" => {
+                    auth_manager
+                        .store_mut()
+                        .config_mut()
+                        .set_bearer(domain, val);
+                }
+                "http-basic" => {
+                    // http-basic expects "username:password" format
+                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                    if cred_parts.len() != 2 {
+                        anyhow::bail!(
+                            "HTTP Basic credentials must be in format: username:password"
+                        );
+                    }
+                    auth_manager.store_mut().config_mut().set_http_basic(
+                        domain,
+                        cred_parts[0],
+                        cred_parts[1],
+                    );
+                }
+                "bitbucket-oauth" => {
+                    // bitbucket-oauth expects "consumer_key:consumer_secret" format
+                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                    if cred_parts.len() != 2 {
+                        anyhow::bail!(
+                            "Bitbucket OAuth credentials must be in format: consumer_key:consumer_secret"
+                        );
+                    }
+                    auth_manager.store_mut().config_mut().set_bitbucket_oauth(
+                        domain,
+                        cred_parts[0],
+                        cred_parts[1],
+                    );
+                }
+                "forgejo-token" => {
+                    // forgejo-token expects "username:token" format
+                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                    if cred_parts.len() != 2 {
+                        anyhow::bail!("Forgejo token must be in format: username:token");
+                    }
+                    auth_manager.store_mut().config_mut().set_forgejo_token(
+                        domain,
+                        cred_parts[0],
+                        cred_parts[1],
+                    );
+                }
+                _ => {
+                    anyhow::bail!("Unknown auth type: {auth_type}");
+                }
+            }
+
+            auth_manager.save()?;
+            success(&format!("Set {auth_type} for {domain}"));
+        }
+        None => {
+            // Get the credential
+            let config = auth_manager.store().config();
+            let value = match auth_type {
+                "github-oauth" => config.get_github_oauth(domain).map(|s| s.to_string()),
+                "gitlab-oauth" => config.get_gitlab_oauth(domain).map(|s| s.to_string()),
+                "gitlab-token" => config.get_gitlab_token(domain).map(|s| s.to_string()),
+                "bearer" => config.get_bearer(domain).map(|s| s.to_string()),
+                "http-basic" => config
+                    .get_http_basic(domain)
+                    .map(|c| format!("{}:********", c.username)),
+                "bitbucket-oauth" => config
+                    .get_bitbucket_oauth(domain)
+                    .map(|c| format!("{}:********", c.consumer_key)),
+                "forgejo-token" => config
+                    .get_forgejo_token(domain)
+                    .map(|c| format!("{}:********", c.username)),
+                _ => {
+                    anyhow::bail!("Unknown auth type: {auth_type}");
+                }
+            };
+
+            match value {
+                Some(v) => {
+                    info(&format!("{key} = {v}"));
+                }
+                None => {
+                    warning(&format!("No {auth_type} configured for {domain}"));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// List authentication configuration
+fn list_auth_config() -> Result<()> {
+    use crate::output::table::Table;
+
+    let auth_path = CredentialStore::global_auth_path();
+    if let Some(path) = &auth_path {
+        println!("Auth file: {}", path.display());
+    }
+    println!();
+
+    let store = CredentialStore::new();
+    let config = store.config();
+
+    if config.is_empty() {
+        crate::output::info("No authentication configured");
+        return Ok(());
+    }
+
+    let mut table = Table::new();
+    table.headers(["Type", "Domain", "Value"]);
+
+    // GitHub OAuth
+    for (domain, token) in &config.github_oauth {
+        let masked = mask_token(token);
+        table.row(["github-oauth", domain, &masked]);
+    }
+
+    // GitLab OAuth
+    for (domain, token) in &config.gitlab_oauth {
+        let masked = mask_token(token.token());
+        table.row(["gitlab-oauth", domain, &masked]);
+    }
+
+    // GitLab Token
+    for (domain, token) in &config.gitlab_token {
+        let masked = mask_token(token.token());
+        table.row(["gitlab-token", domain, &masked]);
+    }
+
+    // Bitbucket OAuth
+    for (domain, cred) in &config.bitbucket_oauth {
+        let value = format!("{}:********", cred.consumer_key);
+        table.row(["bitbucket-oauth", domain, &value]);
+    }
+
+    // HTTP Basic
+    for (domain, cred) in &config.http_basic {
+        let value = format!("{}:********", cred.username);
+        table.row(["http-basic", domain, &value]);
+    }
+
+    // Bearer
+    for (domain, token) in &config.bearer {
+        let masked = mask_token(token.token());
+        table.row(["bearer", domain, &masked]);
+    }
+
+    // Forgejo Token
+    for (domain, cred) in &config.forgejo_token {
+        let value = format!("{}:********", cred.username);
+        table.row(["forgejo-token", domain, &value]);
+    }
+
+    table.print();
+
+    Ok(())
+}
+
+/// Mask a token for display
+fn mask_token(token: &str) -> String {
+    if token.len() <= 8 {
+        "********".to_string()
+    } else {
+        format!("{}...{}", &token[..4], &token[token.len() - 4..])
+    }
 }
 
 fn get_global_config_path() -> Result<PathBuf> {

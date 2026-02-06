@@ -12,8 +12,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tracing::{debug, trace};
 
-/// Cache TTL for package metadata (1 hour)
-const METADATA_CACHE_TTL: Duration = Duration::from_secs(3600);
+/// Cache TTL for skipping even conditional requests (5 minutes).
+/// Within this window, we don't even send a conditional request.
+/// After this, we send If-Modified-Since and usually get a fast 304.
+const METADATA_SKIP_TTL: Duration = Duration::from_secs(300);
 
 /// Statistics collected during package fetching operations.
 #[derive(Debug, Clone, Default)]
@@ -129,71 +131,143 @@ impl Fetcher {
         self.cache_dir.join(format!("{safe_name}.json"))
     }
 
-    /// Try to read from cache
-    fn read_cache(&self, name: &str) -> Option<Vec<u8>> {
-        let path = self.cache_path(name);
-
-        // Check if file exists and is fresh
-        let metadata = std::fs::metadata(&path).ok()?;
-        let modified = metadata.modified().ok()?;
-        let age = modified.elapsed().ok()?;
-
-        if age > METADATA_CACHE_TTL {
-            trace!(package = %name, "cache expired");
-            return None;
-        }
-
-        std::fs::read(&path).ok()
+    /// Get ETag cache path
+    fn etag_path(&self, name: &str) -> PathBuf {
+        let safe_name = name.replace('/', "~");
+        self.cache_dir.join(format!("{safe_name}.etag"))
     }
 
-    /// Write to cache
-    fn write_cache(&self, name: &str, data: &[u8]) {
+    /// Read cached data if it exists (regardless of age).
+    fn read_cache(&self, name: &str) -> Option<Vec<u8>> {
+        std::fs::read(self.cache_path(name)).ok()
+    }
+
+    /// Check if cache is fresh enough to skip even a conditional request.
+    fn is_cache_fresh(&self, name: &str) -> bool {
         let path = self.cache_path(name);
-        let _ = std::fs::write(&path, data);
+        if let Ok(meta) = std::fs::metadata(&path)
+            && let Ok(modified) = meta.modified()
+            && let Ok(age) = modified.elapsed()
+        {
+            age < METADATA_SKIP_TTL
+        } else {
+            false
+        }
+    }
+
+    /// Read stored ETag for a package.
+    fn read_etag(&self, name: &str) -> Option<String> {
+        std::fs::read_to_string(self.etag_path(name)).ok()
+    }
+
+    /// Write response data + ETag to cache, touch the modification time.
+    fn write_cache(&self, name: &str, data: &[u8], etag: Option<&str>) {
+        let _ = std::fs::write(self.cache_path(name), data);
+        if let Some(etag) = etag {
+            let _ = std::fs::write(self.etag_path(name), etag);
+        }
+    }
+
+    /// Touch cache file to reset its modification time (on 304 Not Modified).
+    fn touch_cache(&self, name: &str) {
+        let path = self.cache_path(name);
+        // Update mtime by re-opening and setting length to current length
+        if let Ok(file) = std::fs::OpenOptions::new().write(true).open(&path)
+            && let Ok(meta) = file.metadata()
+        {
+            let _ = file.set_len(meta.len());
+        }
     }
 
     async fn fetch_impl(&self, name: &str) -> Option<FetchedPackage> {
-        // Try cache first
-        let bytes = if let Some(cached) = self.read_cache(name) {
-            self.cache_hits.fetch_add(1, Ordering::Relaxed);
-            trace!(package = %name, "cache hit");
-            cached
-        } else {
-            // Fetch from network
-            let url = format!("{}/{}.json", self.base_url, name);
-            self.requests.fetch_add(1, Ordering::Relaxed);
+        // If cache is very fresh (< 5 min), skip network entirely
+        if self.is_cache_fresh(name) {
+            if let Some(cached) = self.read_cache(name) {
+                self.cache_hits.fetch_add(1, Ordering::Relaxed);
+                trace!(package = %name, "cache fresh, skipping network");
+                return self.parse_response(name, &cached);
+            }
+        }
 
-            trace!(package = %name, "fetching from network");
+        // We have a cache file but it's older than SKIP_TTL — do a conditional request
+        let has_cache = self.cache_path(name).exists();
+        let url = format!("{}/{}.json", self.base_url, name);
+        self.requests.fetch_add(1, Ordering::Relaxed);
 
-            let response = match self.client.get(&url).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    debug!(package = %name, error = %e, "fetch failed");
-                    return None;
+        let mut request = self.client.get(&url);
+
+        // Add conditional headers
+        if has_cache {
+            // Prefer ETag (more reliable), fall back to If-Modified-Since
+            if let Some(etag) = self.read_etag(name) {
+                request = request.header("If-None-Match", etag);
+            }
+            if let Ok(meta) = std::fs::metadata(self.cache_path(name))
+                && let Ok(modified) = meta.modified()
+            {
+                // Convert SystemTime to HTTP date
+                let datetime: chrono::DateTime<chrono::Utc> = modified.into();
+                request = request.header(
+                    "If-Modified-Since",
+                    datetime.format("%a, %d %b %Y %H:%M:%S GMT").to_string(),
+                );
+            }
+        }
+
+        let response = match request.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                debug!(package = %name, error = %e, "fetch failed");
+                // Fall back to stale cache on network error
+                if let Some(cached) = self.read_cache(name) {
+                    trace!(package = %name, "using stale cache after network error");
+                    return self.parse_response(name, &cached);
                 }
-            };
-
-            if !response.status().is_success() {
-                debug!(package = %name, status = %response.status(), "non-success status");
                 return None;
             }
-
-            let bytes = match response.bytes().await {
-                Ok(b) => b,
-                Err(e) => {
-                    debug!(package = %name, error = %e, "failed to read body");
-                    return None;
-                }
-            };
-
-            self.bytes.fetch_add(bytes.len() as u64, Ordering::Relaxed);
-
-            // Cache the response
-            self.write_cache(name, &bytes);
-
-            bytes.to_vec()
         };
 
+        // 304 Not Modified — cache is still valid
+        if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+            self.cache_hits.fetch_add(1, Ordering::Relaxed);
+            self.touch_cache(name);
+            trace!(package = %name, "304 not modified");
+            if let Some(cached) = self.read_cache(name) {
+                return self.parse_response(name, &cached);
+            }
+            return None;
+        }
+
+        if !response.status().is_success() {
+            debug!(package = %name, status = %response.status(), "non-success status");
+            return None;
+        }
+
+        // Save ETag from response
+        let etag = response
+            .headers()
+            .get("etag")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from);
+
+        let bytes = match response.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                debug!(package = %name, error = %e, "failed to read body");
+                return None;
+            }
+        };
+
+        self.bytes.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+
+        // Cache the response
+        self.write_cache(name, &bytes, etag.as_deref());
+
+        let bytes = bytes.to_vec();
+        self.parse_response(name, &bytes)
+    }
+
+    fn parse_response(&self, name: &str, bytes: &[u8]) -> Option<FetchedPackage> {
         let json: PackagistResponse = match sonic_rs::from_slice(&bytes) {
             Ok(j) => j,
             Err(e) => {

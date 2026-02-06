@@ -123,6 +123,8 @@ pub async fn run(args: ReinstallArgs) -> Result<()> {
         audit: false,
         fail_on_audit: false,
         verify_checksums: false,
+        php_version: None,
+        no_php_check: false,
     };
 
     spinner.finish_and_clear();

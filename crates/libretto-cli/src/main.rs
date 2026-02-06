@@ -7,6 +7,7 @@
 #![warn(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
 
+mod auth_manager;
 mod cas_cache;
 mod commands;
 mod context;

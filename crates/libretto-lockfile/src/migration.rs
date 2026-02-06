@@ -53,11 +53,11 @@ impl SchemaVersion {
     pub fn needs_migration(self) -> bool {
         self < Self::CURRENT
     }
+}
 
-    /// Get version string.
-    #[must_use]
-    pub fn to_string(&self) -> String {
-        format!("{}.{}.0", self.major, self.minor)
+impl std::fmt::Display for SchemaVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.0", self.major, self.minor)
     }
 }
 
@@ -96,8 +96,8 @@ impl MigrationResult {
 
         format!(
             "Migrated from {} to {}: {} changes",
-            self.from_version.to_string(),
-            self.to_version.to_string(),
+            self.from_version,
+            self.to_version,
             self.changes.len()
         )
     }

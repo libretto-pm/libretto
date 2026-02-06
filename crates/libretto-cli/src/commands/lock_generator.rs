@@ -140,6 +140,40 @@ pub fn generate_lock_file(
             entry.insert("authors".to_string(), authors.clone());
         }
 
+        // Provide/Replace/Conflict
+        if let Some(ref provide) = pkg.provide {
+            let mut deps: BTreeMap<String, Value> = BTreeMap::new();
+            for (name, version) in provide {
+                deps.insert(name.clone(), Value::from(version.as_str()));
+            }
+            entry.insert(
+                "provide".to_string(),
+                sonic_rs::to_value(&deps).unwrap_or_default(),
+            );
+        }
+
+        if let Some(ref replace) = pkg.replace {
+            let mut deps: BTreeMap<String, Value> = BTreeMap::new();
+            for (name, version) in replace {
+                deps.insert(name.clone(), Value::from(version.as_str()));
+            }
+            entry.insert(
+                "replace".to_string(),
+                sonic_rs::to_value(&deps).unwrap_or_default(),
+            );
+        }
+
+        if let Some(ref conflict) = pkg.conflict {
+            let mut deps: BTreeMap<String, Value> = BTreeMap::new();
+            for (name, version) in conflict {
+                deps.insert(name.clone(), Value::from(version.as_str()));
+            }
+            entry.insert(
+                "conflict".to_string(),
+                sonic_rs::to_value(&deps).unwrap_or_default(),
+            );
+        }
+
         // Description
         if let Some(ref desc) = pkg.description {
             entry.insert("description".to_string(), Value::from(desc.as_str()));

@@ -68,13 +68,8 @@ impl PerforceRepository {
 
         // Build the file spec with optional revision
         let file_spec = if let Some(rev) = revision {
-            if rev.chars().all(|c| c.is_ascii_digit()) {
-                // Changelist number
-                format!("{depot_path}@{rev}")
-            } else {
-                // Label
-                format!("{depot_path}@{rev}")
-            }
+            // Both changelist number and label use the same format
+            format!("{depot_path}@{rev}")
         } else {
             depot_path.to_string()
         };
@@ -209,12 +204,11 @@ impl PerforceRepository {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // Parse "Change 12345 on ..." format
-        if let Some(line) = stdout.lines().next() {
-            if let Some(cl) = line.strip_prefix("Change ") {
-                if let Some(num) = cl.split_whitespace().next() {
-                    return Ok(num.to_string());
-                }
-            }
+        if let Some(line) = stdout.lines().next()
+            && let Some(cl) = line.strip_prefix("Change ")
+            && let Some(num) = cl.split_whitespace().next()
+        {
+            return Ok(num.to_string());
         }
 
         Ok("unknown".to_string())
@@ -250,8 +244,10 @@ impl PerforceRepository {
     /// # Errors
     /// Returns error if status cannot be determined.
     pub fn status(&self) -> Result<RepoStatus> {
-        let mut status = RepoStatus::default();
-        status.head = self.changelist().unwrap_or_default();
+        let mut status = RepoStatus {
+            head: self.changelist().unwrap_or_default(),
+            ..Default::default()
+        };
 
         // Get opened files (modified/added)
         let output = Command::new("p4")
@@ -282,11 +278,11 @@ impl PerforceRepository {
             ])
             .output();
 
-        if let Ok(o) = output {
-            if o.status.success() {
-                let stdout = String::from_utf8_lossy(&o.stdout);
-                status.staged = stdout.lines().count();
-            }
+        if let Ok(o) = output
+            && o.status.success()
+        {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            status.staged = stdout.lines().count();
         }
 
         Ok(status)

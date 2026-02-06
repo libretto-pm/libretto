@@ -464,7 +464,7 @@ impl L2Cache {
         }
 
         // Create temp file in same directory for atomic rename
-        let parent = path.parent().unwrap_or(Path::new("."));
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
         let mut temp = NamedTempFile::new_in(parent).map_err(|e| Error::io(parent, e))?;
 
         temp.write_all(data).map_err(|e| Error::io(path, e))?;

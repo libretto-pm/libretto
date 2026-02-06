@@ -746,10 +746,10 @@ impl GitRepository {
     /// # Errors
     /// Returns error if status cannot be determined.
     pub fn status(&self) -> Result<RepoStatus> {
-        let mut status = RepoStatus::default();
-
-        // Get current HEAD
-        status.head = self.head_commit().unwrap_or_else(|_| "unknown".to_string());
+        let mut status = RepoStatus {
+            head: self.head_commit().unwrap_or_else(|_| "unknown".to_string()),
+            ..Default::default()
+        };
 
         // Get porcelain status
         let output = Command::new("git")

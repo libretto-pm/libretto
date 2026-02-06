@@ -34,7 +34,7 @@ fn run_in_dir_and_capture(args: &[&str], dir: &std::path::Path) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
-/// Normalize output by removing version-specific information.
+/// Normalize output by removing version-specific and platform-specific information.
 fn normalize_output(output: &str) -> String {
     // Remove version numbers that might change
     let output = regex::Regex::new(r"\d+\.\d+\.\d+")
@@ -46,10 +46,24 @@ fn normalize_output(output: &str) -> String {
         .unwrap()
         .replace_all(&output, "YYYY-MM-DD");
 
-    // Remove absolute paths
+    // Remove absolute paths (Unix style)
     let output = regex::Regex::new(r"/[^\s]+/libretto")
         .unwrap()
         .replace_all(&output, "/path/to/libretto");
+
+    // Normalize binary name: libretto.exe -> libretto (Windows compatibility)
+    let output = regex::Regex::new(r"libretto\.exe")
+        .unwrap()
+        .replace_all(&output, "libretto");
+
+    // Normalize bullet points: * -> • (Windows uses * instead of •)
+    // Only replace * at the start of a line with optional leading whitespace
+    let output = regex::Regex::new(r"(?m)^(\s*)\* ")
+        .unwrap()
+        .replace_all(&output, "$1• ");
+
+    // Normalize error prefix: [ERR] -> ✘ (Windows compatibility)
+    let output = output.replace("[ERR]", "✘");
 
     output.to_string()
 }
@@ -429,11 +443,12 @@ fn snapshot_error_invalid_command() {
         .expect("Failed to execute command");
 
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let normalized = normalize_output(&stderr);
 
     with_settings!({
         description => "Error with invalid command",
         omit_expression => true,
     }, {
-        assert_snapshot!("error_invalid_command", stderr);
+        assert_snapshot!("error_invalid_command", normalized);
     });
 }

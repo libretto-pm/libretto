@@ -65,19 +65,21 @@ impl ClearPattern {
             ],
         }
     }
+}
 
-    /// Parse from string.
-    #[must_use]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ClearPattern {
+    type Err = ();
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "packages" | "pkg" => Some(Self::Packages),
-            "metadata" | "meta" => Some(Self::Metadata),
-            "repositories" | "repos" | "repo" => Some(Self::Repositories),
-            "vcs" | "git" => Some(Self::Vcs),
-            "graphs" | "graph" => Some(Self::Graphs),
-            "autoloaders" | "autoload" => Some(Self::Autoloaders),
-            "all" | "*" => Some(Self::All),
-            _ => None,
+            "packages" | "pkg" => Ok(Self::Packages),
+            "metadata" | "meta" => Ok(Self::Metadata),
+            "repositories" | "repos" | "repo" => Ok(Self::Repositories),
+            "vcs" | "git" => Ok(Self::Vcs),
+            "graphs" | "graph" => Ok(Self::Graphs),
+            "autoloaders" | "autoload" => Ok(Self::Autoloaders),
+            "all" | "*" => Ok(Self::All),
+            _ => Err(()),
         }
     }
 }
@@ -845,14 +847,17 @@ mod tests {
     #[test]
     fn clear_pattern_parsing() {
         assert_eq!(
-            ClearPattern::from_str("packages"),
+            "packages".parse::<ClearPattern>().ok(),
             Some(ClearPattern::Packages)
         );
-        assert_eq!(ClearPattern::from_str("pkg"), Some(ClearPattern::Packages));
-        assert_eq!(ClearPattern::from_str("all"), Some(ClearPattern::All));
-        assert_eq!(ClearPattern::from_str("*"), Some(ClearPattern::All));
-        assert_eq!(ClearPattern::from_str("vcs"), Some(ClearPattern::Vcs));
-        assert_eq!(ClearPattern::from_str("invalid"), None);
+        assert_eq!(
+            "pkg".parse::<ClearPattern>().ok(),
+            Some(ClearPattern::Packages)
+        );
+        assert_eq!("all".parse::<ClearPattern>().ok(), Some(ClearPattern::All));
+        assert_eq!("*".parse::<ClearPattern>().ok(), Some(ClearPattern::All));
+        assert_eq!("vcs".parse::<ClearPattern>().ok(), Some(ClearPattern::Vcs));
+        assert_eq!("invalid".parse::<ClearPattern>().ok(), None);
     }
 
     #[test]

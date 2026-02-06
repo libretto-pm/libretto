@@ -224,8 +224,10 @@ impl SvnRepository {
                 exit_code: None,
             })?;
 
-        let mut status = RepoStatus::default();
-        status.head = self.revision().unwrap_or_default();
+        let mut status = RepoStatus {
+            head: self.revision().unwrap_or_default(),
+            ..Default::default()
+        };
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);

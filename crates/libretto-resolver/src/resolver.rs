@@ -275,14 +275,24 @@ impl<F: PackageFetcher> Resolver<F> {
     }
 
     /// Run `PubGrub` solver on fetched packages.
+    ///
+    /// Uses a two-pass approach to handle Composer's `replace` semantics:
+    ///
+    /// **Pass 1**: Resolve without replacement awareness to discover which
+    /// package versions are selected. From those selected versions, collect
+    /// their `replace` declarations to build an authoritative replacement set.
+    ///
+    /// **Pass 2**: Re-resolve with replaced packages filtered out of the
+    /// dependency graph. This mirrors Composer's behavior where replaced
+    /// packages are never independently selected by the solver.
+    ///
+    /// Pass 2 is near-instant since all metadata is already in memory.
     fn solve(
         &self,
         root_deps: &[Dependency],
         dev_deps: &[Dependency],
         packages: AHashMap<String, PackageEntry>,
     ) -> Result<Resolution, ResolveError> {
-        let provider = PubGrubProvider::new(packages, self.config.mode, self.config.min_stability);
-
         let all_deps: Vec<_> = if self.config.include_dev {
             root_deps.iter().chain(dev_deps.iter()).cloned().collect()
         } else {
@@ -295,13 +305,68 @@ impl<F: PackageFetcher> Resolver<F> {
             .map(|d| (d.name.clone(), d.constraint.ranges().clone()))
             .collect();
 
-        provider.set_root_deps(root_dep_ranges);
-
         let root = PackageName::new("__root__", "__root__");
         let root_ver = ComposerVersion::new(1, 0, 0);
 
-        match resolve(&provider, root, root_ver) {
-            Ok(solution) => self.build_resolution(solution, &provider, dev_deps),
+        // --- Pass 1: Resolve to discover replacements ---
+        let provider = PubGrubProvider::new(
+            packages.clone(),
+            self.config.mode,
+            self.config.min_stability,
+            AHashSet::new(),
+        );
+        provider.set_root_deps(root_dep_ranges.clone());
+
+        let solution = match resolve(&provider, root.clone(), root_ver.clone()) {
+            Ok(s) => s,
+            Err(PubGrubError::NoSolution(mut tree)) => {
+                tree.collapse_no_versions();
+                return Err(ResolveError::Conflict {
+                    explanation: DefaultStringReporter::report(&tree),
+                });
+            }
+            Err(PubGrubError::ErrorChoosingVersion { package, .. }) => {
+                return Err(ResolveError::PackageNotFound {
+                    name: package.to_string(),
+                });
+            }
+            Err(_) => return Err(ResolveError::Cancelled),
+        };
+
+        // Collect replacements from the *selected* versions only
+        let mut replaced: AHashSet<String> = AHashSet::new();
+        for (name, version) in &solution {
+            if name.as_str() == "__root__/__root__" {
+                continue;
+            }
+            if let Some(info) = provider.version_info(name, version) {
+                for rep in &info.replaces {
+                    replaced.insert(rep.name.as_str().to_string());
+                }
+            }
+        }
+
+        // If nothing is replaced, skip pass 2 — use pass 1 result directly
+        if replaced.is_empty() {
+            return self.build_resolution(solution, &provider, dev_deps);
+        }
+
+        info!(
+            replaced_count = replaced.len(),
+            "re-resolving without replaced packages"
+        );
+
+        // --- Pass 2: Re-resolve with replaced packages excluded ---
+        let provider2 = PubGrubProvider::new(
+            packages,
+            self.config.mode,
+            self.config.min_stability,
+            replaced,
+        );
+        provider2.set_root_deps(root_dep_ranges);
+
+        match resolve(&provider2, root, root_ver) {
+            Ok(solution) => self.build_resolution(solution, &provider2, dev_deps),
             Err(PubGrubError::NoSolution(mut tree)) => {
                 tree.collapse_no_versions();
                 Err(ResolveError::Conflict {
@@ -341,6 +406,40 @@ impl<F: PackageFetcher> Resolver<F> {
             let idx = graph.add_node(name.clone());
             indices.insert(key.clone(), idx);
             pkg_map.insert(key, (name, version));
+        }
+
+        // Collect packages that are replaced by other resolved packages.
+        // For example, laravel/framework replaces illuminate/* — those should
+        // not appear as separate entries in the resolution.
+        let mut replaced: AHashSet<String> = AHashSet::new();
+        for (_, (name, version)) in &pkg_map {
+            if let Some(info) = provider.version_info(name, version) {
+                for rep in &info.replaces {
+                    let rep_name = rep.name.as_str();
+                    if pkg_map.contains_key(rep_name) {
+                        replaced.insert(rep_name.to_string());
+                    }
+                }
+            }
+        }
+
+        // Remove replaced packages from the graph and maps
+        for name in &replaced {
+            if let Some(idx) = indices.remove(name) {
+                graph.remove_node(idx);
+                // petgraph may swap indices when removing nodes, so rebuild
+            }
+            pkg_map.remove(name);
+        }
+
+        // Rebuild graph after removals (petgraph node removal invalidates indices)
+        if !replaced.is_empty() {
+            graph = DiGraph::new();
+            indices.clear();
+            for (key, (name, _)) in &pkg_map {
+                let idx = graph.add_node(name.clone());
+                indices.insert(key.clone(), idx);
+            }
         }
 
         // Add dependency edges
@@ -446,6 +545,10 @@ struct PubGrubProvider {
     mode: ResolutionMode,
     min_stability: Stability,
     root_deps: parking_lot::Mutex<DependencyConstraints<PackageName, Ranges<ComposerVersion>>>,
+    /// Packages replaced by selected packages (populated between pass 1 and 2).
+    /// In pass 1 this is empty; in pass 2 it contains the names of packages
+    /// that are replaced by the versions selected in pass 1.
+    replaced_packages: AHashSet<String>,
 }
 
 impl PubGrubProvider {
@@ -453,12 +556,14 @@ impl PubGrubProvider {
         packages: AHashMap<String, PackageEntry>,
         mode: ResolutionMode,
         min_stability: Stability,
+        replaced_packages: AHashSet<String>,
     ) -> Self {
         Self {
             packages,
             mode,
             min_stability,
             root_deps: parking_lot::Mutex::new(DependencyConstraints::default()),
+            replaced_packages,
         }
     }
 
@@ -532,6 +637,12 @@ impl DependencyProvider for PubGrubProvider {
             return Ok(None);
         }
 
+        // In pass 2, replaced packages return no versions so PubGrub
+        // never selects them — the replacer already provides them.
+        if self.replaced_packages.contains(pkg.as_str()) {
+            return Ok(None);
+        }
+
         let entry = match self.packages.get(pkg.as_str()) {
             Some(e) => e,
             None => return Ok(None),
@@ -586,7 +697,10 @@ impl DependencyProvider for PubGrubProvider {
 
         let mut deps = DependencyConstraints::default();
         for dep in &version.dependencies {
-            if !is_platform_package(dep.name.as_str()) {
+            let dep_name = dep.name.as_str();
+            // In pass 2, skip dependencies on replaced packages — the
+            // replacer already satisfies them.
+            if !is_platform_package(dep_name) && !self.replaced_packages.contains(dep_name) {
                 deps.insert(dep.name.clone(), dep.constraint.ranges().clone());
             }
         }
@@ -609,6 +723,24 @@ fn is_platform_package(name: &str) -> bool {
         || name == "composer"
         || name == "composer-plugin-api"
         || name == "composer-runtime-api"
+}
+
+/// Parse a constraint string from replace/provide declarations.
+///
+/// Handles the special `"self.version"` value used in Composer's `replace` and
+/// `provide` fields, which means "the same version as this package". We treat
+/// it as a wildcard match (`*`) while preserving the original string for lock
+/// file output.
+fn parse_link_constraint(constraint: &str) -> Option<ComposerConstraint> {
+    if constraint == "self.version" {
+        Some(ComposerConstraint::with_original(
+            Ranges::full(),
+            Stability::Stable,
+            "self.version",
+        ))
+    } else {
+        ComposerConstraint::parse(constraint)
+    }
 }
 
 /// Convert fetched package data to internal package entry.
@@ -637,7 +769,7 @@ fn convert_fetched_package(
         for (dep_name, constraint) in &v.replace {
             if let (Some(n), Some(c)) = (
                 PackageName::parse(dep_name),
-                ComposerConstraint::parse(constraint),
+                parse_link_constraint(constraint),
             ) {
                 pv.add_replace(Dependency::new(n, c));
             }
@@ -647,7 +779,7 @@ fn convert_fetched_package(
         for (dep_name, constraint) in &v.provide {
             if let (Some(n), Some(c)) = (
                 PackageName::parse(dep_name),
-                ComposerConstraint::parse(constraint),
+                parse_link_constraint(constraint),
             ) {
                 pv.add_provide(Dependency::new(n, c));
             }
@@ -717,32 +849,29 @@ fn build_resolved_package(
             )
         });
 
-    let (require, require_dev, suggest) = pkg_info.map_or((None, None, None), |v| {
-        let req: Vec<(String, String)> = v
-            .dependencies
-            .iter()
-            .map(|d| (d.name.as_str().to_string(), d.constraint.to_string()))
-            .collect();
-        let req_dev: Vec<(String, String)> = v
-            .dev_dependencies
-            .iter()
-            .map(|d| (d.name.as_str().to_string(), d.constraint.to_string()))
-            .collect();
-        let sug: Vec<(String, String)> = v
-            .suggests
-            .iter()
-            .map(|d| (d.name.as_str().to_string(), d.constraint.to_string()))
-            .collect();
-        (
-            if req.is_empty() { None } else { Some(req) },
-            if req_dev.is_empty() {
-                None
-            } else {
-                Some(req_dev)
-            },
-            if sug.is_empty() { None } else { Some(sug) },
-        )
-    });
+    let (require, require_dev, suggest, provide, replace, conflict) =
+        pkg_info.map_or((None, None, None, None, None, None), |v| {
+            let to_vec = |deps: &[Dependency]| -> Option<Vec<(String, String)>> {
+                if deps.is_empty() {
+                    None
+                } else {
+                    Some(
+                        deps.iter()
+                            .map(|d| (d.name.as_str().to_string(), d.constraint.to_string()))
+                            .collect(),
+                    )
+                }
+            };
+
+            (
+                to_vec(&v.dependencies),
+                to_vec(&v.dev_dependencies),
+                to_vec(&v.suggests),
+                to_vec(&v.provides),
+                to_vec(&v.replaces),
+                to_vec(&v.conflicts),
+            )
+        });
 
     let (package_type, description, homepage, license, authors, keywords, time) =
         pkg_info.map_or((None, None, None, None, None, None, None), |v| {
@@ -784,6 +913,9 @@ fn build_resolved_package(
         require,
         require_dev,
         suggest,
+        provide,
+        replace,
+        conflict,
         package_type,
         description,
         homepage,

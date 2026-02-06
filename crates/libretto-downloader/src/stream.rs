@@ -296,7 +296,7 @@ impl StreamDownloader {
         debug!(url = %url, "streaming download starting");
 
         // Create temp file in same directory for atomic move
-        let parent = dest.parent().unwrap_or(Path::new("."));
+        let parent = dest.parent().unwrap_or_else(|| Path::new("."));
         std::fs::create_dir_all(parent).map_err(|e| DownloadError::io(parent, e))?;
 
         let temp_file = NamedTempFile::new_in(parent).map_err(|e| DownloadError::io(parent, e))?;

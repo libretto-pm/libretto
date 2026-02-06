@@ -329,30 +329,21 @@ impl Auditor {
     pub async fn audit(&self, packages: &[(PackageId, Version)]) -> CoreResult<AuditReport> {
         info!(packages = packages.len(), "starting security audit");
 
-        let mut audits = Vec::with_capacity(packages.len());
+        // Fetch all advisories in a single bulk API call
+        let vuln_map = self
+            .advisory_db
+            .check_packages(packages)
+            .await
+            .map_err(|e| CoreError::Audit(e.to_string()))?;
 
-        for (package_id, version) in packages {
-            let vulnerabilities = self
-                .advisory_db
-                .check_version(package_id, version)
-                .await
-                .map_err(|e| CoreError::Audit(e.to_string()))?;
-
-            if !vulnerabilities.is_empty() {
-                warn!(
-                    package = %package_id,
-                    version = %version,
-                    count = vulnerabilities.len(),
-                    "vulnerabilities found"
-                );
-            }
-
-            audits.push(PackageAudit {
+        let audits: Vec<PackageAudit> = packages
+            .iter()
+            .map(|(package_id, version)| PackageAudit {
                 package: package_id.clone(),
                 version: version.clone(),
-                vulnerabilities,
-            });
-        }
+                vulnerabilities: vuln_map.get(package_id).cloned().unwrap_or_default(),
+            })
+            .collect();
 
         let report = AuditReport {
             packages: audits,

@@ -419,6 +419,7 @@ impl Drop for CacheIndex {
 
 /// Create a new index entry.
 #[must_use]
+#[allow(clippy::too_many_arguments)]
 pub fn create_entry(
     key: String,
     entry_type: CacheEntryType,

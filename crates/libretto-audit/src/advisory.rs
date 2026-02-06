@@ -5,9 +5,9 @@ use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use libretto_core::{PackageId, Version};
+use libretto_resolver::version::{ComposerConstraint, ComposerVersion};
 use parking_lot::RwLock;
 use reqwest::Client;
-use semver::VersionReq;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -75,55 +75,28 @@ struct SourceInfo {
     remote_id: String,
 }
 
-/// Parsed version constraint from advisory.
+/// Parsed version constraint from advisory, backed by the Composer constraint parser.
 #[derive(Debug, Clone)]
 struct VersionConstraint {
-    req: VersionReq,
-    original: String,
+    constraint: ComposerConstraint,
 }
 
 impl VersionConstraint {
-    /// Parse Composer version constraint.
-    fn parse(constraint: &str) -> Option<Self> {
-        // Try to parse directly first (semver format)
-        if let Ok(req) = VersionReq::parse(constraint.trim()) {
-            return Some(Self {
-                req,
-                original: constraint.to_string(),
-            });
+    /// Parse Composer version constraint (supports all Composer formats).
+    fn parse(input: &str) -> Option<Self> {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return None;
         }
-
-        // Handle Composer-specific formats
-        let normalized = constraint.trim().replace("||", " || ");
-
-        if let Ok(req) = VersionReq::parse(&normalized) {
-            return Some(Self {
-                req,
-                original: constraint.to_string(),
-            });
-        }
-
-        // Fallback: try exact match
-        Version::parse(constraint.trim_start_matches('='))
-            .ok()
-            .and_then(|version| {
-                VersionReq::parse(&format!("={version}"))
-                    .ok()
-                    .map(|req| Self {
-                        req,
-                        original: constraint.to_string(),
-                    })
-            })
+        let constraint = ComposerConstraint::parse(trimmed)?;
+        Some(Self { constraint })
     }
 
-    /// Check if version matches constraint.
-    fn matches(&self, version: &Version) -> bool {
-        self.req.matches(version)
-    }
-
-    /// Get the original constraint string.
-    fn original(&self) -> &str {
-        &self.original
+    /// Check if a semver::Version matches this constraint.
+    fn matches_semver(&self, version: &Version) -> bool {
+        // Convert semver::Version to ComposerVersion for matching
+        let composer_ver = ComposerVersion::new(version.major, version.minor, version.patch);
+        self.constraint.matches(&composer_ver)
     }
 }
 
@@ -139,24 +112,18 @@ impl ProcessedVulnerability {
     fn from_advisory(advisory: RawAdvisory) -> Option<Self> {
         let package = PackageId::parse(&advisory.package_name)?;
 
-        // Parse affected version constraints
-        let constraints: Vec<_> = advisory
-            .affected_versions
-            .split(',')
-            .filter_map(|s| VersionConstraint::parse(s.trim()))
+        // Parse the full affected_versions string as a single Composer constraint.
+        // Packagist uses Composer constraint syntax: comma for AND, pipe for OR,
+        // e.g. ">=6.0,<6.0.4|>=5.8.0,<5.8.35"
+        let constraints: Vec<_> = VersionConstraint::parse(&advisory.affected_versions)
+            .into_iter()
             .collect();
 
         if constraints.is_empty() {
-            warn!(
-                package = %package,
-                constraint = %advisory.affected_versions,
-                "failed to parse version constraint"
-            );
-        } else {
             debug!(
                 package = %package,
-                constraints = ?constraints.iter().map(VersionConstraint::original).collect::<Vec<_>>(),
-                "parsed version constraints"
+                constraint = %advisory.affected_versions,
+                "could not parse version constraint, advisory will be skipped for version matching"
             );
         }
 
@@ -241,12 +208,13 @@ impl ProcessedVulnerability {
     #[must_use]
     pub fn affects_version(&self, version: &Version) -> bool {
         if self.constraints.is_empty() {
-            // If no constraints parsed, assume all versions affected (conservative)
-            return true;
+            // If no constraints could be parsed, we cannot confirm this version
+            // is affected — return false to avoid false positives.
+            return false;
         }
 
         // Version is affected if it matches any constraint
-        self.constraints.iter().any(|c| c.matches(version))
+        self.constraints.iter().any(|c| c.matches_semver(version))
     }
 
     /// Get underlying vulnerability.
@@ -419,40 +387,117 @@ impl AdvisoryDatabase {
         Ok(affected)
     }
 
-    /// Bulk check multiple packages.
+    /// Fetch advisories for all packages in a single bulk API call.
+    ///
+    /// This mirrors Composer's approach: one POST to the security-advisories
+    /// endpoint with all package names, instead of one request per package.
     ///
     /// # Errors
-    /// Returns error if any fetch fails.
+    /// Returns error if the bulk fetch fails.
+    pub async fn fetch_advisories_bulk(&self, packages: &[PackageId]) -> Result<()> {
+        // Skip if cache is fresh
+        if !self.is_cache_stale() {
+            return Ok(());
+        }
+
+        if packages.is_empty() {
+            return Ok(());
+        }
+
+        info!(
+            count = packages.len(),
+            "fetching security advisories (bulk)"
+        );
+
+        // POST form-encoded body with all package names, exactly like Composer:
+        //   packages[]=vendor/name&packages[]=vendor/name2&...
+        let body: String = packages
+            .iter()
+            .map(|pkg| format!("packages[]={}", pkg.full_name()))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let response = self
+            .client
+            .post(self.base_url.as_str())
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| AdvisoryError::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            return Err(AdvisoryError::Network(format!(
+                "HTTP {}",
+                response.status()
+            )));
+        }
+
+        let body = response
+            .bytes()
+            .await
+            .map_err(|e| AdvisoryError::Network(e.to_string()))?;
+
+        #[derive(Deserialize)]
+        struct ApiResponse {
+            advisories: HashMap<String, Vec<RawAdvisory>>,
+        }
+
+        let raw: ApiResponse =
+            sonic_rs::from_slice(&body).map_err(|e| AdvisoryError::Parse(e.to_string()))?;
+
+        // Populate cache for ALL requested packages (including those with no advisories)
+        for pkg in packages {
+            let vulnerabilities: Vec<ProcessedVulnerability> = raw
+                .advisories
+                .get(&pkg.full_name())
+                .map(|advisories| {
+                    advisories
+                        .iter()
+                        .filter_map(|a| ProcessedVulnerability::from_advisory(a.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            self.cache.insert(pkg.clone(), vulnerabilities);
+        }
+
+        *self.last_update.write() = Some(Instant::now());
+
+        info!(
+            advisories = raw.advisories.values().map(Vec::len).sum::<usize>(),
+            "bulk advisory fetch complete"
+        );
+
+        Ok(())
+    }
+
+    /// Bulk check multiple packages using a single API call.
+    ///
+    /// # Errors
+    /// Returns error if fetch fails.
     pub async fn check_packages(
         &self,
         packages: &[(PackageId, Version)],
     ) -> Result<AHashMap<PackageId, Vec<Vulnerability>>> {
+        // Fetch all advisories in one request
+        let package_ids: Vec<PackageId> = packages.iter().map(|(id, _)| id.clone()).collect();
+        self.fetch_advisories_bulk(&package_ids).await?;
+
+        // Now check each package against the cached advisories
         let mut results = AHashMap::with_capacity(packages.len());
-
-        // Use concurrent fetching with rate limiting
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(10)); // Max 10 concurrent
-
-        let mut tasks = Vec::with_capacity(packages.len());
-
         for (package, version) in packages {
-            let db = self.clone();
-            let package = package.clone();
-            let version = version.clone();
-            let permit = semaphore.clone();
+            // Advisories are now in cache from the bulk fetch
+            if let Some(cached) = self.cache.get(package) {
+                let affected: Vec<_> = cached
+                    .iter()
+                    .filter(|adv| adv.affects_version(version))
+                    .map(|adv| adv.vulnerability().clone())
+                    .collect();
 
-            tasks.push(tokio::spawn(async move {
-                let _guard = permit.acquire().await.expect("semaphore");
-                db.check_version(&package, &version)
-                    .await
-                    .map(|vulns| (package, vulns))
-            }));
-        }
-
-        for task in tasks {
-            if let Ok(Ok((package, vulns))) = task.await
-                && !vulns.is_empty()
-            {
-                results.insert(package, vulns);
+                if !affected.is_empty() {
+                    results.insert(package.clone(), affected);
+                }
             }
         }
 
@@ -482,9 +527,9 @@ mod tests {
     #[test]
     fn test_version_matching() {
         let constraint = VersionConstraint::parse(">=1.0.0").unwrap();
-        assert!(constraint.matches(&Version::parse("1.0.0").unwrap()));
-        assert!(constraint.matches(&Version::parse("2.0.0").unwrap()));
-        assert!(!constraint.matches(&Version::parse("0.9.0").unwrap()));
+        assert!(constraint.matches_semver(&Version::parse("1.0.0").unwrap()));
+        assert!(constraint.matches_semver(&Version::parse("2.0.0").unwrap()));
+        assert!(!constraint.matches_semver(&Version::parse("0.9.0").unwrap()));
     }
 
     #[test]

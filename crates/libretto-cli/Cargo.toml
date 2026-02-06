@@ -21,6 +21,7 @@ workspace = true
 [dependencies]
 # Internal crates
 libretto-core = { workspace = true }
+libretto-config = { workspace = true }
 libretto-platform = { workspace = true }
 libretto-cache = { workspace = true }
 libretto-repository = { workspace = true }
@@ -34,7 +35,14 @@ libretto-audit = { workspace = true }
 libretto-lockfile = { workspace = true }
 
 # CLI framework
-clap = { workspace = true, features = ["derive", "env", "unicode", "wrap_help", "string", "color"] }
+clap = { workspace = true, features = [
+    "derive",
+    "env",
+    "unicode",
+    "wrap_help",
+    "string",
+    "color",
+] }
 clap_complete = "4.5"
 
 # Async runtime
@@ -89,6 +97,10 @@ parking_lot = { workspace = true }
 # Hashing
 sha1 = { workspace = true }
 hex = { workspace = true }
+
+# System utilities
+gethostname = "0.5"
+dirs = "5.0"
 
 [dev-dependencies]
 # Testing frameworks

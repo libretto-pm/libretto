@@ -1,5 +1,8 @@
 //! Core configuration types for Composer compatibility.
 
+use crate::auth::{
+    BearerToken, BitbucketOAuthCredentials, GitLabOAuthToken, GitLabToken, HttpBasicCredentials,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -351,59 +354,7 @@ impl Default for AllowPlugins {
     }
 }
 
-/// GitLab OAuth token.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitLabOAuthToken {
-    /// OAuth token.
-    pub token: String,
-}
-
-/// GitLab private token.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GitLabToken {
-    /// Simple token string.
-    Simple(String),
-    /// Token with additional options.
-    Extended {
-        /// Token value.
-        token: String,
-        /// Token type (e.g., "private-token", "job-token").
-        #[serde(rename = "token-type", skip_serializing_if = "Option::is_none")]
-        token_type: Option<String>,
-    },
-}
-
-/// Bitbucket OAuth credentials.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BitbucketOAuthCredentials {
-    /// Consumer key.
-    pub consumer_key: String,
-    /// Consumer secret.
-    pub consumer_secret: String,
-}
-
-/// HTTP Basic credentials.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HttpBasicCredentials {
-    /// Username.
-    pub username: String,
-    /// Password.
-    pub password: String,
-}
-
-/// Bearer token.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum BearerToken {
-    /// Simple token string.
-    Simple(String),
-    /// Token with additional options.
-    Extended {
-        /// Token value.
-        token: String,
-    },
-}
+// Auth credential types are defined in auth.rs - use auth::HttpBasicCredentials, etc.
 
 /// Audit configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

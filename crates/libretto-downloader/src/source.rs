@@ -78,6 +78,7 @@ impl ArchiveType {
 
     /// Detect archive type from file extension.
     #[must_use]
+    #[allow(clippy::case_sensitive_file_extension_comparisons)]
     pub fn from_extension(path: &str) -> Option<Self> {
         let lower = path.to_lowercase();
         if lower.ends_with(".zip") {

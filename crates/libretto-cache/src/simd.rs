@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn test_popcount_slice() {
         let data = [0u64, 1, 0xFF, u64::MAX];
-        assert_eq!(popcount_slice(&data), 0 + 1 + 8 + 64);
+        assert_eq!(popcount_slice(&data), 73); // 0 + 1 + 8 + 64
     }
 
     #[test]

@@ -260,6 +260,8 @@ pub async fn run(args: CreateProjectArgs) -> Result<()> {
                 audit: false,
                 fail_on_audit: false,
                 verify_checksums: false,
+                php_version: None,
+                no_php_check: false,
             };
 
             crate::commands::install::run(install_args).await?;

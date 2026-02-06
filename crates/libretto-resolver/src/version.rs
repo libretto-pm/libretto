@@ -546,6 +546,23 @@ impl ComposerConstraint {
         }
     }
 
+    /// Create a constraint with full ranges and a custom original string.
+    ///
+    /// Used for special constraint values like `"self.version"` in replace/provide.
+    #[must_use]
+    pub fn with_original(
+        ranges: Ranges<ComposerVersion>,
+        min_stability: Stability,
+        original: &str,
+    ) -> Self {
+        Self {
+            ranges,
+            min_stability,
+            dev_branches: SmallVec::new(),
+            original: Arc::from(original),
+        }
+    }
+
     /// Create a constraint matching no versions.
     #[must_use]
     pub fn empty() -> Self {

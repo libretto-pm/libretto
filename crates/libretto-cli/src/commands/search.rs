@@ -19,8 +19,8 @@ pub struct SearchArgs {
     pub package_type: Option<String>,
 
     /// Output format (text, json)
-    #[arg(short = 'f', long, default_value = "text")]
-    pub format: String,
+    #[arg(short = 'f', long = "output", default_value = "text")]
+    pub output_format: String,
 }
 
 /// Run the search command.
@@ -54,7 +54,7 @@ pub async fn run(args: SearchArgs) -> Result<()> {
             }
 
             // Output format
-            if args.format == "json" {
+            if args.output_format == "json" {
                 return output_json(&filtered);
             }
 
