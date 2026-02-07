@@ -415,13 +415,14 @@ impl ScriptExecutor {
             // Handle special directives
             if ref_name.starts_with("php ") {
                 let php_cmd = ref_name.strip_prefix("php ").unwrap();
-                return self.execute_shell(&format!("{} {}", self.config.php_binary, php_cmd));
+                let args = parse_command_args(php_cmd)?;
+                return self.execute_program(&self.config.php_binary, &args);
             }
 
             if ref_name.starts_with("composer ") {
                 let composer_cmd = ref_name.strip_prefix("composer ").unwrap();
-                return self
-                    .execute_shell(&format!("{} {}", self.config.composer_binary, composer_cmd));
+                let args = parse_command_args(composer_cmd)?;
+                return self.execute_program(&self.config.composer_binary, &args);
             }
 
             if ref_name.starts_with("putenv ") {
@@ -748,6 +749,128 @@ try {{
             Ok(Some(status))
         }
     }
+
+    /// Execute a program directly with arguments, bypassing shell parsing.
+    fn execute_program(&self, program: &str, args: &[String]) -> Result<Option<ExitStatus>> {
+        debug!(program = %program, args = ?args, timeout = self.config.timeout, "executing program");
+
+        // Build environment
+        let mut env: HashMap<String, String> = std::env::vars().collect();
+
+        // Add vendor/bin to PATH
+        let vendor_bin = self.config.working_dir.join("vendor").join("bin");
+        if vendor_bin.exists() {
+            let path = env.get("PATH").cloned().unwrap_or_default();
+            let separator = if cfg!(windows) { ";" } else { ":" };
+            let new_path = format!("{}{}{}", vendor_bin.display(), separator, path);
+            env.insert("PATH".to_string(), new_path);
+        }
+
+        // Add COMPOSER_* variables
+        env.insert(
+            "COMPOSER_BINARY".to_string(),
+            self.config.composer_binary.clone(),
+        );
+        env.insert(
+            "COMPOSER_DEV_MODE".to_string(),
+            if self.config.dev_mode { "1" } else { "0" }.to_string(),
+        );
+
+        // Add custom environment
+        env.extend(self.config.env.clone());
+
+        let mut command = Command::new(program);
+        command
+            .args(args)
+            .current_dir(&self.config.working_dir)
+            .envs(&env)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        let display_cmd = format!("{program} {}", args.join(" "));
+
+        // If timeout is set (> 0), enforce it
+        if self.config.timeout > 0 {
+            let timeout_duration = Duration::from_secs(self.config.timeout);
+            let mut child = match command.spawn() {
+                Ok(child) => child,
+                #[cfg(windows)]
+                Err(err) => {
+                    debug!(
+                        program = %program,
+                        error = %err,
+                        "direct program spawn failed, retrying through cmd /C"
+                    );
+                    let mut fallback = Command::new("cmd");
+                    fallback
+                        .arg("/C")
+                        .arg(program)
+                        .args(args)
+                        .current_dir(&self.config.working_dir)
+                        .envs(&env)
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit());
+                    fallback
+                        .spawn()
+                        .context(format!("Failed to spawn: {display_cmd}"))?
+                }
+                #[cfg(not(windows))]
+                Err(_) => {
+                    return Err(anyhow::anyhow!("Failed to spawn: {display_cmd}"));
+                }
+            };
+            let start = Instant::now();
+
+            loop {
+                match child.try_wait() {
+                    Ok(Some(status)) => return Ok(Some(status)),
+                    Ok(None) => {
+                        if start.elapsed() >= timeout_duration {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            bail!(
+                                "Script timed out after {}s: {}",
+                                self.config.timeout,
+                                display_cmd
+                            );
+                        }
+                        std::thread::sleep(Duration::from_millis(100));
+                    }
+                    Err(e) => return Err(anyhow::anyhow!("Failed to wait for process: {e}")),
+                }
+            }
+        }
+
+        let status = match command.status() {
+            Ok(status) => status,
+            #[cfg(windows)]
+            Err(err) => {
+                debug!(
+                    program = %program,
+                    error = %err,
+                    "direct program execution failed, retrying through cmd /C"
+                );
+                Command::new("cmd")
+                    .arg("/C")
+                    .arg(program)
+                    .args(args)
+                    .current_dir(&self.config.working_dir)
+                    .envs(&env)
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .status()
+                    .context(format!("Failed to execute: {display_cmd}"))?
+            }
+            #[cfg(not(windows))]
+            Err(_) => {
+                return Err(anyhow::anyhow!("Failed to execute: {display_cmd}"));
+            }
+        };
+        Ok(Some(status))
+    }
 }
 
 /// Run pre-install or pre-update scripts.
@@ -1011,6 +1134,56 @@ fn is_php_class_method(cmd: &str) -> bool {
     valid_class && valid_method && starts_valid
 }
 
+/// Parse a command argument string into argv-like args, honoring simple quoting.
+fn parse_command_args(input: &str) -> Result<Vec<String>> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some(q) => {
+                if ch == q {
+                    quote = None;
+                } else if ch == '\\' {
+                    if let Some(next) = chars.peek() {
+                        if *next == q || *next == '\\' {
+                            current.push(chars.next().expect("peeked character exists"));
+                        } else {
+                            current.push(ch);
+                        }
+                    } else {
+                        current.push(ch);
+                    }
+                } else {
+                    current.push(ch);
+                }
+            }
+            None => {
+                if ch.is_whitespace() {
+                    if !current.is_empty() {
+                        args.push(std::mem::take(&mut current));
+                    }
+                } else if ch == '"' || ch == '\'' {
+                    quote = Some(ch);
+                } else {
+                    current.push(ch);
+                }
+            }
+        }
+    }
+
+    if quote.is_some() {
+        bail!("Unterminated quoted argument in script command: {input}");
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    Ok(args)
+}
+
 /// Escape a string for use in shell commands.
 #[allow(dead_code)]
 fn shell_escape(s: &str) -> String {
@@ -1133,5 +1306,19 @@ mod tests {
         assert_eq!(shell_escape("hello"), "'hello'");
         assert_eq!(shell_escape("hello world"), "'hello world'");
         assert_eq!(shell_escape("it's"), "'it'\\''s'");
+    }
+
+    #[test]
+    fn test_parse_command_args_handles_php_inline_code() {
+        let args =
+            parse_command_args(r#"-r "file_exists('.env') || copy('.env.example', '.env');""#)
+                .unwrap();
+        assert_eq!(
+            args,
+            vec![
+                "-r".to_string(),
+                "file_exists('.env') || copy('.env.example', '.env');".to_string()
+            ]
+        );
     }
 }
