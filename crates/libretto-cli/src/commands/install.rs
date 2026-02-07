@@ -27,9 +27,9 @@ use libretto_resolver::Stability;
 use libretto_resolver::turbo::{TurboConfig, TurboResolver};
 use libretto_resolver::{ComposerConstraint, Dependency, PackageName, ResolutionMode};
 use semver::Version;
-use sonic_rs::{JsonContainerTrait, JsonValueTrait, Value};
+use sonic_rs::{JsonContainerTrait, JsonValueMutTrait, JsonValueTrait, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
@@ -240,6 +240,13 @@ pub async fn run(args: InstallArgs) -> Result<()> {
 
     // Generate autoloader
     if !args.dry_run {
+        write_composer_installed_metadata(
+            &composer_lock_path,
+            &vendor_dir,
+            &composer,
+            !args.no_dev,
+        )?;
+
         // Pre-autoload-dump scripts
         if !args.no_scripts
             && let Some(result) = run_pre_autoload_scripts(&composer, &script_config)?
@@ -1589,6 +1596,216 @@ fn generate_lock_file(
     composer: &Value,
 ) -> Result<()> {
     super::lock_generator::generate_lock_file(lock_path, resolution, composer)
+}
+
+fn normalize_version_for_composer(version: &str) -> String {
+    let base = version.trim_start_matches('v');
+    let core = base.split(['-', '+']).next().unwrap_or(base);
+    let mut parts = core.split('.').map(str::trim).collect::<Vec<_>>();
+    if parts
+        .iter()
+        .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))
+    {
+        while parts.len() < 4 {
+            parts.push("0");
+        }
+        return parts.join(".");
+    }
+    version.to_string()
+}
+
+fn php_single_quote_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('\'', "\\'")
+}
+
+fn write_composer_installed_metadata(
+    lock_path: &Path,
+    vendor_dir: &Path,
+    composer: &Value,
+    include_dev: bool,
+) -> Result<()> {
+    if !lock_path.exists() {
+        return Ok(());
+    }
+
+    let lock_content = std::fs::read_to_string(lock_path)?;
+    let lock: Value = sonic_rs::from_str(&lock_content)?;
+    let composer_dir = vendor_dir.join("composer");
+    std::fs::create_dir_all(&composer_dir)?;
+
+    let mut package_entries: Vec<(Value, bool)> = Vec::new();
+    if let Some(pkgs) = lock.get("packages").and_then(Value::as_array) {
+        for pkg in pkgs {
+            package_entries.push((pkg.clone(), false));
+        }
+    }
+    if include_dev && let Some(pkgs) = lock.get("packages-dev").and_then(Value::as_array) {
+        for pkg in pkgs {
+            package_entries.push((pkg.clone(), true));
+        }
+    }
+
+    let mut installed_packages: Vec<Value> = Vec::new();
+    let mut dev_package_names: Vec<String> = Vec::new();
+    let mut installed_php_entries: Vec<String> = Vec::new();
+
+    for (mut pkg, is_dev) in package_entries {
+        let Some(name) = pkg.get("name").and_then(Value::as_str).map(String::from) else {
+            continue;
+        };
+        let pretty_version = pkg
+            .get("version")
+            .and_then(Value::as_str)
+            .unwrap_or("dev-main")
+            .to_string();
+        let version = normalize_version_for_composer(&pretty_version);
+        let pkg_type = pkg
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or("library")
+            .to_string();
+        let reference = pkg
+            .get("dist")
+            .and_then(|d| d.get("reference"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                pkg.get("source")
+                    .and_then(|s| s.get("reference"))
+                    .and_then(Value::as_str)
+            })
+            .map(String::from);
+        let has_dist = pkg.get("dist").is_some();
+        let install_path_rel = format!("../{name}");
+
+        let Some(obj) = pkg.as_object_mut() else {
+            continue;
+        };
+        obj.insert(
+            &"version_normalized".to_string(),
+            Value::from(version.as_str()),
+        );
+        obj.insert(
+            &"install-path".to_string(),
+            Value::from(install_path_rel.as_str()),
+        );
+        obj.insert(&"dev_requirement".to_string(), Value::from(is_dev));
+        if !obj.contains_key(&"installation-source".to_string()) {
+            let source = if has_dist { "dist" } else { "source" };
+            obj.insert(&"installation-source".to_string(), Value::from(source));
+        }
+
+        if is_dev {
+            dev_package_names.push(name.clone());
+        }
+        installed_packages.push(pkg.clone());
+
+        let mut php_entry = String::new();
+        php_entry.push_str(&format!(
+            "        '{}' => array(\n",
+            php_single_quote_escape(&name)
+        ));
+        php_entry.push_str(&format!(
+            "            'pretty_version' => '{}',\n",
+            php_single_quote_escape(&pretty_version)
+        ));
+        php_entry.push_str(&format!(
+            "            'version' => '{}',\n",
+            php_single_quote_escape(&version)
+        ));
+        match reference {
+            Some(reference) => php_entry.push_str(&format!(
+                "            'reference' => '{}',\n",
+                php_single_quote_escape(&reference)
+            )),
+            None => php_entry.push_str("            'reference' => null,\n"),
+        }
+        php_entry.push_str(&format!(
+            "            'type' => '{}',\n",
+            php_single_quote_escape(&pkg_type)
+        ));
+        php_entry.push_str(&format!(
+            "            'install_path' => __DIR__ . '/{}',\n",
+            php_single_quote_escape(&install_path_rel)
+        ));
+        php_entry.push_str("            'aliases' => array(),\n");
+        php_entry.push_str(&format!(
+            "            'dev_requirement' => {},\n",
+            if is_dev { "true" } else { "false" }
+        ));
+        php_entry.push_str("        ),\n");
+        installed_php_entries.push(php_entry);
+    }
+
+    let mut installed_json = BTreeMap::new();
+    installed_json.insert("packages".to_string(), Value::from(installed_packages));
+    installed_json.insert("dev".to_string(), Value::from(include_dev));
+    let dev_names_values: Vec<Value> = dev_package_names
+        .iter()
+        .map(|name| Value::from(name.as_str()))
+        .collect();
+    installed_json.insert(
+        "dev-package-names".to_string(),
+        Value::from(dev_names_values),
+    );
+    std::fs::write(
+        composer_dir.join("installed.json"),
+        sonic_rs::to_string_pretty(&installed_json)?,
+    )?;
+
+    let root_name = composer
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("root/package");
+    let root_pretty_version = composer
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or("1.0.0+no-version-set");
+    let root_version = normalize_version_for_composer(root_pretty_version);
+    let root_type = composer
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or("project");
+
+    let installed_php = format!(
+        "<?php return array(\n\
+    'root' => array(\n\
+        'name' => '{}',\n\
+        'pretty_version' => '{}',\n\
+        'version' => '{}',\n\
+        'reference' => null,\n\
+        'type' => '{}',\n\
+        'install_path' => __DIR__ . '/../../',\n\
+        'aliases' => array(),\n\
+        'dev' => {},\n\
+    ),\n\
+    'versions' => array(\n\
+{}\
+        '{}' => array(\n\
+            'pretty_version' => '{}',\n\
+            'version' => '{}',\n\
+            'reference' => null,\n\
+            'type' => '{}',\n\
+            'install_path' => __DIR__ . '/../../',\n\
+            'aliases' => array(),\n\
+            'dev_requirement' => {},\n\
+        ),\n\
+    ),\n\
+);\n",
+        php_single_quote_escape(root_name),
+        php_single_quote_escape(root_pretty_version),
+        php_single_quote_escape(&root_version),
+        php_single_quote_escape(root_type),
+        if include_dev { "true" } else { "false" },
+        installed_php_entries.concat(),
+        php_single_quote_escape(root_name),
+        php_single_quote_escape(root_pretty_version),
+        php_single_quote_escape(&root_version),
+        php_single_quote_escape(root_type),
+        if include_dev { "true" } else { "false" },
+    );
+    std::fs::write(composer_dir.join("installed.php"), installed_php)?;
+
+    Ok(())
 }
 
 fn generate_autoloader(vendor_dir: &PathBuf, args: &InstallArgs) -> Result<()> {
