@@ -36,7 +36,8 @@ use anyhow::Result;
 use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::process::Command;
+use std::io;
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
@@ -131,6 +132,52 @@ pub struct PlatformValidator {
 
 #[allow(dead_code)]
 impl PlatformValidator {
+    /// Run a PHP command and, on Windows, retry through `cmd /C` when a shim
+    /// such as `php.bat` cannot be executed directly.
+    fn run_php_command(&self, args: &[&str]) -> io::Result<Output> {
+        match Command::new(&self.php_binary).args(args).output() {
+            Ok(output) => {
+                #[cfg(windows)]
+                {
+                    if !output.status.success() {
+                        debug!(
+                            php_binary = %self.php_binary,
+                            status = ?output.status.code(),
+                            "direct PHP execution failed, retrying through cmd /C"
+                        );
+                        return Command::new("cmd")
+                            .arg("/C")
+                            .arg(&self.php_binary)
+                            .args(args)
+                            .output();
+                    }
+                }
+
+                Ok(output)
+            }
+            Err(err) => {
+                #[cfg(windows)]
+                {
+                    debug!(
+                        php_binary = %self.php_binary,
+                        error = %err,
+                        "direct PHP execution failed, retrying through cmd /C"
+                    );
+                    return Command::new("cmd")
+                        .arg("/C")
+                        .arg(&self.php_binary)
+                        .args(args)
+                        .output();
+                }
+
+                #[cfg(not(windows))]
+                {
+                    Err(err)
+                }
+            }
+        }
+    }
+
     /// Create a new validator with the default PHP binary.
     pub fn new() -> Self {
         Self {
@@ -314,9 +361,7 @@ impl PlatformValidator {
 
     /// Detect PHP version.
     fn detect_php_version(&self) -> Result<Option<String>> {
-        let output = Command::new(&self.php_binary)
-            .args(["-r", "echo PHP_VERSION;"])
-            .output();
+        let output = self.run_php_command(&["-r", "echo PHP_VERSION;"]);
 
         match output {
             Ok(output) if output.status.success() => {
@@ -336,9 +381,7 @@ impl PlatformValidator {
         let mut extensions = HashMap::new();
 
         // Get list of loaded extensions
-        let output = Command::new(&self.php_binary)
-            .args(["-r", "echo json_encode(get_loaded_extensions());"])
-            .output();
+        let output = self.run_php_command(&["-r", "echo json_encode(get_loaded_extensions());"]);
 
         let loaded: Vec<String> = match output {
             Ok(output) if output.status.success() => {
@@ -371,10 +414,7 @@ impl PlatformValidator {
             "echo phpversion('{ext_name}') ?: (extension_loaded('{ext_name}') ? '0.0.0' : '');"
         );
 
-        let output = Command::new(&self.php_binary)
-            .args(["-r", &code])
-            .output()
-            .ok()?;
+        let output = self.run_php_command(&["-r", code.as_str()]).ok()?;
 
         if output.status.success() {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -438,12 +478,11 @@ impl PlatformValidator {
     }
 
     fn detect_icu_version(&self) -> Option<String> {
-        let output = Command::new(&self.php_binary)
-            .args([
+        let output = self
+            .run_php_command(&[
                 "-r",
                 "echo defined('INTL_ICU_VERSION') ? INTL_ICU_VERSION : '';",
             ])
-            .output()
             .ok()?;
 
         if output.status.success() {
@@ -459,9 +498,8 @@ impl PlatformValidator {
     }
 
     fn detect_libxml_version(&self) -> Option<String> {
-        let output = Command::new(&self.php_binary)
-            .args(["-r", "echo LIBXML_DOTTED_VERSION;"])
-            .output()
+        let output = self
+            .run_php_command(&["-r", "echo LIBXML_DOTTED_VERSION;"])
             .ok()?;
 
         if output.status.success() {
