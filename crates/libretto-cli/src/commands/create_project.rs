@@ -287,24 +287,21 @@ pub async fn run(args: CreateProjectArgs) -> Result<()> {
         // Run post-root-package-install scripts
         if let Some(result) =
             scripts::run_root_package_install_scripts(&composer_json, &script_config)?
-        {
-            if !result.success {
+            && !result.success {
                 warning(&format!(
                     "Post-root-package-install script warning: {}",
                     result.error.unwrap_or_default()
                 ));
             }
-        }
 
         // Run post-create-project-cmd scripts
-        if let Some(result) = scripts::run_create_project_scripts(&composer_json, &script_config)? {
-            if !result.success {
+        if let Some(result) = scripts::run_create_project_scripts(&composer_json, &script_config)?
+            && !result.success {
                 warning(&format!(
                     "Post-create-project script warning: {}",
                     result.error.unwrap_or_default()
                 ));
             }
-        }
     }
 
     success(&format!("Project '{project_name}' created successfully!"));

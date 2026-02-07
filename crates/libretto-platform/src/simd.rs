@@ -1027,7 +1027,7 @@ mod tests {
     fn popcount_slice() {
         let runtime = SimdRuntime::new();
         let data = vec![0u64, 1, 0xFF, u64::MAX];
-        assert_eq!(runtime.popcount_slice(&data), 0 + 1 + 8 + 64);
+        assert_eq!(runtime.popcount_slice(&data), 1 + 8 + 64);
     }
 
     #[test]

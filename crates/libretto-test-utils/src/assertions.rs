@@ -21,14 +21,14 @@ pub async fn assert_package_installed(
 ) -> Result<()> {
     let parts: Vec<&str> = name.split('/').collect();
     if parts.len() != 2 {
-        bail!("Invalid package name format: {}", name);
+        bail!("Invalid package name format: {name}");
     }
 
     let package_path = vendor_path.join(parts[0]).join(parts[1]);
 
     // Check directory exists
     if !package_path.exists() {
-        bail!("Package {} not found at {:?}", name, package_path);
+        bail!("Package {name} not found at {}", package_path.display());
     }
 
     // Check composer.json exists
@@ -38,28 +38,20 @@ pub async fn assert_package_installed(
         let json: Value = serde_json::from_str(&content)?;
 
         // Verify package name
-        if let Some(pkg_name) = json["name"].as_str() {
-            if pkg_name != name {
-                bail!(
-                    "Package name mismatch: expected {}, found {}",
-                    name,
-                    pkg_name
-                );
-            }
+        if let Some(pkg_name) = json["name"].as_str()
+            && pkg_name != name
+        {
+            bail!("Package name mismatch: expected {name}, found {pkg_name}");
         }
 
         // Verify version if provided
-        if let Some(expected_version) = version {
-            if let Some(pkg_version) = json["version"].as_str() {
-                if pkg_version != expected_version {
-                    bail!(
-                        "Package version mismatch for {}: expected {}, found {}",
-                        name,
-                        expected_version,
-                        pkg_version
-                    );
-                }
-            }
+        if let Some(expected_version) = version
+            && let Some(pkg_version) = json["version"].as_str()
+            && pkg_version != expected_version
+        {
+            bail!(
+                "Package version mismatch for {name}: expected {expected_version}, found {pkg_version}"
+            );
         }
     }
 
@@ -70,16 +62,15 @@ pub async fn assert_package_installed(
 pub async fn assert_package_not_installed(vendor_path: &Path, name: &str) -> Result<()> {
     let parts: Vec<&str> = name.split('/').collect();
     if parts.len() != 2 {
-        bail!("Invalid package name format: {}", name);
+        bail!("Invalid package name format: {name}");
     }
 
     let package_path = vendor_path.join(parts[0]).join(parts[1]);
 
     if package_path.exists() {
         bail!(
-            "Package {} should not be installed, but found at {:?}",
-            name,
-            package_path
+            "Package {name} should not be installed, but found at {}",
+            package_path.display()
         );
     }
 
@@ -95,7 +86,7 @@ pub async fn assert_package_not_installed(vendor_path: &Path, name: &str) -> Res
 /// - Content hash is present
 pub async fn assert_lock_file_valid(lock_path: &Path) -> Result<()> {
     if !lock_path.exists() {
-        bail!("Lock file not found at {:?}", lock_path);
+        bail!("Lock file not found at {}", lock_path.display());
     }
 
     let content = fs::read_to_string(lock_path).await?;
@@ -114,7 +105,7 @@ pub async fn assert_lock_file_valid(lock_path: &Path) -> Result<()> {
     if let Some(packages) = json["packages"].as_array() {
         for (i, pkg) in packages.iter().enumerate() {
             if !pkg["name"].is_string() {
-                bail!("Package {} missing 'name' field", i);
+                bail!("Package {i} missing 'name' field");
             }
             if !pkg["version"].is_string() {
                 bail!("Package {} ({}) missing 'version' field", i, pkg["name"]);
@@ -143,16 +134,13 @@ pub async fn assert_lock_contains_package(
         .find(|pkg| pkg["name"].as_str() == Some(name));
 
     match found {
-        None => bail!("Package {} not found in lock file", name),
+        None => bail!("Package {name} not found in lock file"),
         Some(pkg) => {
             if let Some(expected_version) = version {
                 let actual_version = pkg["version"].as_str().unwrap_or("");
                 if actual_version != expected_version {
                     bail!(
-                        "Package {} version mismatch: expected {}, found {}",
-                        name,
-                        expected_version,
-                        actual_version
+                        "Package {name} version mismatch: expected {expected_version}, found {actual_version}"
                     );
                 }
             }
@@ -171,12 +159,12 @@ pub async fn assert_lock_contains_package(
 pub async fn assert_autoloader_valid(vendor_path: &Path) -> Result<()> {
     let autoload_path = vendor_path.join("autoload.php");
     if !autoload_path.exists() {
-        bail!("Autoloader not found at {:?}", autoload_path);
+        bail!("Autoloader not found at {}", autoload_path.display());
     }
 
     let composer_dir = vendor_path.join("composer");
     if !composer_dir.exists() {
-        bail!("Composer directory not found at {:?}", composer_dir);
+        bail!("Composer directory not found at {}", composer_dir.display());
     }
 
     // Check required autoload files
@@ -185,7 +173,7 @@ pub async fn assert_autoloader_valid(vendor_path: &Path) -> Result<()> {
     for file in &required_files {
         let file_path = composer_dir.join(file);
         if !file_path.exists() {
-            bail!("Required autoload file not found: {:?}", file_path);
+            bail!("Required autoload file not found: {}", file_path.display());
         }
     }
 
@@ -215,7 +203,7 @@ pub async fn assert_psr4_registered(
     // Check for namespace registration
     let escaped_ns = namespace.replace('\\', "\\\\");
     if !content.contains(&escaped_ns) {
-        bail!("Namespace {} not found in PSR-4 autoloader", namespace);
+        bail!("Namespace {namespace} not found in PSR-4 autoloader");
     }
 
     Ok(())
@@ -232,7 +220,7 @@ pub async fn assert_classmap_contains(vendor_path: &Path, class_name: &str) -> R
     let content = fs::read_to_string(&classmap_path).await?;
 
     if !content.contains(class_name) {
-        bail!("Class {} not found in classmap", class_name);
+        bail!("Class {class_name} not found in classmap");
     }
 
     Ok(())
@@ -251,20 +239,17 @@ pub async fn assert_composer_has_dependency(
     let section = if dev { "require-dev" } else { "require" };
     let deps = json[section]
         .as_object()
-        .context(format!("Missing '{}' section", section))?;
+        .context(format!("Missing '{section}' section"))?;
 
     match deps.get(name) {
-        None => bail!("Dependency {} not found in {} section", name, section),
+        None => bail!("Dependency {name} not found in {section} section"),
         Some(actual_constraint) => {
-            if let Some(expected) = constraint {
-                if actual_constraint.as_str() != Some(expected) {
-                    bail!(
-                        "Dependency {} constraint mismatch: expected {}, found {}",
-                        name,
-                        expected,
-                        actual_constraint
-                    );
-                }
+            if let Some(expected) = constraint
+                && actual_constraint.as_str() != Some(expected)
+            {
+                bail!(
+                    "Dependency {name} constraint mismatch: expected {expected}, found {actual_constraint}"
+                );
             }
         }
     }
@@ -283,10 +268,10 @@ pub async fn assert_composer_no_dependency(
 
     let section = if dev { "require-dev" } else { "require" };
 
-    if let Some(deps) = json[section].as_object() {
-        if deps.contains_key(name) {
-            bail!("Dependency {} should not be in {} section", name, section);
-        }
+    if let Some(deps) = json[section].as_object()
+        && deps.contains_key(name)
+    {
+        bail!("Dependency {name} should not be in {section} section");
     }
 
     Ok(())
@@ -295,16 +280,15 @@ pub async fn assert_composer_no_dependency(
 /// Assert file exists and contains expected content.
 pub async fn assert_file_contains(path: &Path, expected: &str) -> Result<()> {
     if !path.exists() {
-        bail!("File not found: {:?}", path);
+        bail!("File not found: {}", path.display());
     }
 
     let content = fs::read_to_string(path).await?;
 
     if !content.contains(expected) {
         bail!(
-            "File {:?} does not contain expected content: {}",
-            path,
-            expected
+            "File {} does not contain expected content: {expected}",
+            path.display()
         );
     }
 
@@ -314,17 +298,15 @@ pub async fn assert_file_contains(path: &Path, expected: &str) -> Result<()> {
 /// Assert that file matches expected content exactly.
 pub async fn assert_file_equals(path: &Path, expected: &str) -> Result<()> {
     if !path.exists() {
-        bail!("File not found: {:?}", path);
+        bail!("File not found: {}", path.display());
     }
 
     let content = fs::read_to_string(path).await?;
 
     if content != expected {
         bail!(
-            "File {:?} content mismatch.\nExpected:\n{}\n\nActual:\n{}",
-            path,
-            expected,
-            content
+            "File {} content mismatch.\nExpected:\n{expected}\n\nActual:\n{content}",
+            path.display()
         );
     }
 
@@ -334,7 +316,7 @@ pub async fn assert_file_equals(path: &Path, expected: &str) -> Result<()> {
 /// Assert that a directory contains expected number of files.
 pub async fn assert_dir_file_count(dir: &Path, expected: usize) -> Result<()> {
     if !dir.exists() {
-        bail!("Directory not found: {:?}", dir);
+        bail!("Directory not found: {}", dir.display());
     }
 
     let mut count = 0;
@@ -348,10 +330,8 @@ pub async fn assert_dir_file_count(dir: &Path, expected: usize) -> Result<()> {
 
     if count != expected {
         bail!(
-            "Directory {:?} has {} files, expected {}",
-            dir,
-            count,
-            expected
+            "Directory {} has {count} files, expected {expected}",
+            dir.display()
         );
     }
 
@@ -390,11 +370,7 @@ pub async fn assert_install_success(vendor_path: &Path, expected_packages: usize
     }
 
     if package_count != expected_packages {
-        bail!(
-            "Expected {} packages installed, found {}",
-            expected_packages,
-            package_count
-        );
+        bail!("Expected {expected_packages} packages installed, found {package_count}");
     }
 
     Ok(())
@@ -416,9 +392,9 @@ pub fn check_json_shape(actual: &Value, expected: &Value) -> Result<()> {
             for (key, expected_val) in expected_obj {
                 let actual_val = actual_obj
                     .get(key)
-                    .with_context(|| format!("Missing key: {}", key))?;
+                    .with_context(|| format!("Missing key: {key}"))?;
                 check_json_shape(actual_val, expected_val)
-                    .with_context(|| format!("Mismatch at key: {}", key))?;
+                    .with_context(|| format!("Mismatch at key: {key}"))?;
             }
         }
         (Value::Array(_), Value::Array(_)) => {
@@ -428,7 +404,7 @@ pub fn check_json_shape(actual: &Value, expected: &Value) -> Result<()> {
         (Value::Number(_), Value::Number(_)) => {}
         (Value::Bool(_), Value::Bool(_)) => {}
         (Value::Null, Value::Null) => {}
-        _ => bail!("Type mismatch: expected {:?}, got {:?}", expected, actual),
+        _ => bail!("Type mismatch: expected {expected:?}, got {actual:?}"),
     }
 
     Ok(())

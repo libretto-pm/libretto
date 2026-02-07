@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::str::FromStr;
 
 /// A complete composer.json manifest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -156,7 +157,7 @@ impl ComposerManifest {
     /// # Errors
     ///
     /// Returns an error if the JSON is invalid.
-    pub fn from_str(s: &str) -> Result<Self, ManifestError> {
+    pub fn parse(s: &str) -> Result<Self, ManifestError> {
         Self::from_slice(s.as_bytes())
     }
 
@@ -257,6 +258,14 @@ impl ComposerManifest {
     /// Remove a dev dependency.
     pub fn remove_dev_dependency(&mut self, name: &str) -> Option<String> {
         self.require_dev.remove(name)
+    }
+}
+
+impl FromStr for ComposerManifest {
+    type Err = ManifestError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_slice(s.as_bytes())
     }
 }
 
@@ -637,13 +646,7 @@ pub enum ManifestError {
 
 /// Check if a package is a platform package.
 fn is_platform_package(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("php-")
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name == "composer"
-        || name == "composer-plugin-api"
-        || name == "composer-runtime-api"
+    libretto_core::is_platform_package_name(name)
 }
 
 #[cfg(test)]
@@ -703,6 +706,7 @@ mod tests {
             "require": {
                 "php": "^8.0",
                 "ext-json": "*",
+                "php-open-source-saver/jwt-auth": "^2.0",
                 "symfony/console": "^6.0"
             }
         }"#;
@@ -713,6 +717,11 @@ mod tests {
         assert_eq!(platform.len(), 2);
         assert!(platform.iter().any(|(n, _)| n == "php"));
         assert!(platform.iter().any(|(n, _)| n == "ext-json"));
+        assert!(
+            !platform
+                .iter()
+                .any(|(n, _)| n == "php-open-source-saver/jwt-auth")
+        );
     }
 
     #[test]
@@ -767,8 +776,10 @@ mod tests {
 
     #[test]
     fn test_serialize() {
-        let mut manifest = ComposerManifest::default();
-        manifest.name = Some("test/package".to_string());
+        let mut manifest = ComposerManifest {
+            name: Some("test/package".to_string()),
+            ..Default::default()
+        };
         manifest.add_dependency("dep/one", "^1.0");
 
         let json = manifest.to_json_pretty().unwrap();

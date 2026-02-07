@@ -16,6 +16,8 @@ fn get_theme() -> ColorfulTheme {
     ColorfulTheme::default()
 }
 
+type InputValidator = dyn Fn(&String) -> Result<(), String>;
+
 /// Confirmation prompt
 pub struct Confirm {
     message: String,
@@ -59,7 +61,7 @@ pub struct Input {
     message: String,
     default: Option<String>,
     allow_empty: bool,
-    validator: Option<Box<dyn Fn(&String) -> Result<(), String>>>,
+    validator: Option<Box<InputValidator>>,
 }
 
 impl Input {

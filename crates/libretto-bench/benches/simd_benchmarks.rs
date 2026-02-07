@@ -43,7 +43,7 @@ fn bench_simd_hashing(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark JSON parsing with sonic-rs (SIMD) vs serde_json.
+/// Benchmark JSON parsing with sonic-rs (SIMD) vs `serde_json`.
 fn bench_simd_json(c: &mut Criterion) {
     let mut group = c.benchmark_group("simd/json");
     group.measurement_time(Duration::from_secs(10));
@@ -197,7 +197,7 @@ fn bench_hex_encoding(c: &mut Criterion) {
     let mut group = c.benchmark_group("simd/hex");
 
     let hash_bytes = [0xABu8; 32]; // SHA256-like hash
-    let hex_string = hex::encode(&hash_bytes);
+    let hex_string = hex::encode(hash_bytes);
 
     group.bench_function("encode_32bytes", |b| {
         b.iter(|| {

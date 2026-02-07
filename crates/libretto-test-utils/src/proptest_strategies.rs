@@ -19,13 +19,13 @@ pub fn package_name_strategy() -> impl Strategy<Value = String> {
 /// Strategy for generating full package names (vendor/package).
 pub fn full_package_name_strategy() -> impl Strategy<Value = String> {
     (vendor_name_strategy(), package_name_strategy())
-        .prop_map(|(vendor, package)| format!("{}/{}", vendor, package))
+        .prop_map(|(vendor, package)| format!("{vendor}/{package}"))
 }
 
 /// Strategy for generating semantic versions.
 pub fn semver_strategy() -> impl Strategy<Value = String> {
     (0u32..100, 0u32..100, 0u32..1000)
-        .prop_map(|(major, minor, patch)| format!("{}.{}.{}", major, minor, patch))
+        .prop_map(|(major, minor, patch)| format!("{major}.{minor}.{patch}"))
 }
 
 /// Strategy for generating semantic versions with pre-release.
@@ -35,14 +35,14 @@ pub fn semver_with_prerelease_strategy() -> impl Strategy<Value = String> {
         Just("beta".to_string()),
         Just("rc".to_string()),
         Just("dev".to_string()),
-        (1u32..20).prop_map(|n| format!("alpha.{}", n)),
-        (1u32..20).prop_map(|n| format!("beta.{}", n)),
-        (1u32..10).prop_map(|n| format!("rc.{}", n)),
+        (1u32..20).prop_map(|n| format!("alpha.{n}")),
+        (1u32..20).prop_map(|n| format!("beta.{n}")),
+        (1u32..10).prop_map(|n| format!("rc.{n}")),
     ];
 
     prop_oneof![
         semver_strategy(),
-        (semver_strategy(), prerelease).prop_map(|(v, pre)| format!("{}-{}", v, pre)),
+        (semver_strategy(), prerelease).prop_map(|(v, pre)| format!("{v}-{pre}")),
     ]
 }
 
@@ -67,12 +67,12 @@ pub fn version_strategy() -> impl Strategy<Value = String> {
 
 /// Strategy for generating caret constraints (^x.y.z).
 pub fn caret_constraint_strategy() -> impl Strategy<Value = String> {
-    semver_strategy().prop_map(|v| format!("^{}", v))
+    semver_strategy().prop_map(|v| format!("^{v}"))
 }
 
 /// Strategy for generating tilde constraints (~x.y.z).
 pub fn tilde_constraint_strategy() -> impl Strategy<Value = String> {
-    semver_strategy().prop_map(|v| format!("~{}", v))
+    semver_strategy().prop_map(|v| format!("~{v}"))
 }
 
 /// Strategy for generating exact version constraints.
@@ -84,7 +84,7 @@ pub fn exact_constraint_strategy() -> impl Strategy<Value = String> {
 pub fn range_constraint_strategy() -> impl Strategy<Value = String> {
     (semver_strategy(), semver_strategy()).prop_map(|(v1, v2)| {
         // Ensure v1 < v2 for valid range
-        format!(">={} <{}", v1, v2)
+        format!(">={v1} <{v2}")
     })
 }
 
@@ -92,8 +92,8 @@ pub fn range_constraint_strategy() -> impl Strategy<Value = String> {
 pub fn wildcard_constraint_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
         Just("*".to_string()),
-        (0u32..20).prop_map(|major| format!("{}.*", major)),
-        (0u32..20, 0u32..50).prop_map(|(major, minor)| format!("{}.{}.*", major, minor)),
+        (0u32..20).prop_map(|major| format!("{major}.*")),
+        (0u32..20, 0u32..50).prop_map(|(major, minor)| format!("{major}.{minor}.*")),
     ]
 }
 
@@ -113,7 +113,7 @@ pub fn complex_constraint_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
         4 => single_constraint_strategy(),
         1 => (single_constraint_strategy(), single_constraint_strategy())
-            .prop_map(|(c1, c2)| format!("{} || {}", c1, c2)),
+            .prop_map(|(c1, c2)| format!("{c1} || {c2}")),
     ]
 }
 
@@ -130,7 +130,7 @@ pub fn constraint_with_stability_strategy() -> impl Strategy<Value = String> {
     prop_oneof![
         3 => single_constraint_strategy(),
         1 => (single_constraint_strategy(), stability)
-            .prop_map(|(c, s)| format!("{}{}", c, s)),
+            .prop_map(|(c, s)| format!("{c}{s}")),
     ]
 }
 
@@ -148,7 +148,7 @@ pub fn class_name_strategy() -> impl Strategy<Value = String> {
 /// Strategy for generating full qualified class names.
 pub fn fqcn_strategy() -> impl Strategy<Value = String> {
     (namespace_strategy(), class_name_strategy())
-        .prop_map(|(ns, class)| format!("{}\\{}", ns, class))
+        .prop_map(|(ns, class)| format!("{ns}\\{class}"))
 }
 
 /// Strategy for generating valid composer.json structure.
@@ -195,8 +195,8 @@ pub fn composer_json_with_deps_strategy(max_deps: usize) -> impl Strategy<Value 
 
 /// Strategy for generating autoload PSR-4 configuration.
 pub fn psr4_autoload_strategy() -> impl Strategy<Value = Value> {
-    let key_strategy = namespace_strategy().prop_map(|ns| format!("{}\\", ns));
-    let value_strategy = "[a-z]{3,10}/".prop_map(|s| s.to_string());
+    let key_strategy = namespace_strategy().prop_map(|ns| format!("{ns}\\"));
+    let value_strategy = "[a-z]{3,10}/".prop_map(|s| s.clone());
 
     prop::collection::hash_map(key_strategy, value_strategy, 1..=5).prop_map(|entries| {
         let map: serde_json::Map<String, Value> = entries
@@ -262,9 +262,9 @@ pub fn url_strategy() -> impl Strategy<Value = String> {
 
     (domain, path).prop_map(|(domain, path)| {
         if path.is_empty() {
-            format!("https://{}", domain)
+            format!("https://{domain}")
         } else {
-            format!("https://{}/{}", domain, path)
+            format!("https://{domain}/{path}")
         }
     })
 }
@@ -274,7 +274,7 @@ pub fn git_url_strategy() -> impl Strategy<Value = String> {
     let owner = "[a-z][a-z0-9-]{2,15}";
     let repo = "[a-z][a-z0-9-]{2,30}";
 
-    (owner, repo).prop_map(|(owner, repo)| format!("https://github.com/{}/{}.git", owner, repo))
+    (owner, repo).prop_map(|(owner, repo)| format!("https://github.com/{owner}/{repo}.git"))
 }
 
 #[cfg(test)]

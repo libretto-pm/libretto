@@ -348,6 +348,12 @@ unused_self = "allow"
 # Continue can be explicit for clarity
 needless_continue = "allow"
 
+# Wildcard imports in internal modules are fine
+wildcard_imports = "allow"
+
+# Const fn detection - allow non-const for flexibility
+missing_const_for_fn = "allow"
+
 # Map/unwrap patterns are often clearer than alternatives
 map_unwrap_or = "allow"
 

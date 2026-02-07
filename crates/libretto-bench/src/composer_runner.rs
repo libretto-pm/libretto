@@ -130,7 +130,7 @@ pub fn create_test_composer_json(dir: &Path, packages: &[(&str, &str)]) -> Resul
 
     let require: Vec<String> = packages
         .iter()
-        .map(|(name, version)| format!(r#"        "{}": "{}""#, name, version))
+        .map(|(name, version)| format!(r#"        "{name}": "{version}""#))
         .collect();
 
     let content = format!(

@@ -1,10 +1,13 @@
 //! Dump-autoload command implementation.
 
+use crate::output::warning;
+use crate::scripts::{ScriptConfig, run_post_autoload_scripts, run_pre_autoload_scripts};
 use anyhow::Result;
 use clap::Args;
 use console::style;
 use libretto_autoloader::{AutoloadConfig, AutoloaderGenerator, OptimizationLevel};
 use serde::Deserialize;
+use sonic_rs::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -25,7 +28,7 @@ pub struct DumpAutoloadArgs {
     #[arg(long)]
     pub apcu: bool,
 
-    /// Don't scan for classes
+    /// Skip scripts execution
     #[arg(long)]
     pub no_scripts: bool,
 }
@@ -37,6 +40,8 @@ struct ComposerJson {
     autoload: AutoloadSection,
     #[serde(default, rename = "autoload-dev")]
     autoload_dev: AutoloadSection,
+    #[serde(default)]
+    config: ComposerConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -51,6 +56,14 @@ struct AutoloadSection {
     files: Vec<String>,
     #[serde(default, rename = "exclude-from-classmap")]
     exclude: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ComposerConfig {
+    #[serde(default, rename = "optimize-autoloader")]
+    optimize_autoloader: bool,
+    #[serde(default, rename = "classmap-authoritative")]
+    classmap_authoritative: bool,
 }
 
 /// PSR-4 value can be either a string or array of strings.
@@ -75,6 +88,9 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
     info!("running dump-autoload command");
 
     let start_time = Instant::now();
+    let root_composer_json = PathBuf::from("composer.json");
+    let composer_config = load_composer_config(&root_composer_json).unwrap_or_default();
+    let composer_json_value = load_composer_json_value(&root_composer_json);
 
     let vendor_dir = PathBuf::from("vendor");
     if !vendor_dir.exists() {
@@ -82,15 +98,23 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
     }
 
     // Determine optimization level
-    let optimization_level = if args.classmap_authoritative {
+    let classmap_authoritative =
+        args.classmap_authoritative || composer_config.classmap_authoritative;
+    let optimize = if classmap_authoritative {
+        true
+    } else {
+        args.optimize || composer_config.optimize_autoloader
+    };
+
+    let optimization_level = if classmap_authoritative {
         OptimizationLevel::Authoritative
-    } else if args.optimize {
+    } else if optimize {
         OptimizationLevel::Optimized
     } else {
         OptimizationLevel::None
     };
 
-    let is_optimized = args.optimize || args.classmap_authoritative;
+    let is_optimized = optimization_level >= OptimizationLevel::Optimized;
 
     if is_optimized {
         println!(
@@ -145,7 +169,6 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
     }
 
     // Also load root project's autoload config if exists (including autoload-dev)
-    let root_composer_json = PathBuf::from("composer.json");
     if root_composer_json.exists()
         && let Some(config) = load_autoload_config_with_dev(&root_composer_json)
     {
@@ -156,8 +179,46 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
 
     info!("Loaded autoload configs from {} packages", package_count);
 
+    // Pre-autoload-dump scripts
+    if !args.no_scripts
+        && let Some(composer_json) = composer_json_value.as_ref()
+    {
+        let script_config = ScriptConfig {
+            working_dir: std::env::current_dir()?,
+            ..Default::default()
+        };
+
+        if let Some(result) = run_pre_autoload_scripts(composer_json, &script_config)?
+            && !result.success
+            && let Some(ref err) = result.error
+        {
+            warning(&format!("Pre-autoload script warning: {err}"));
+        }
+    }
+
     match generator.generate() {
         Ok(()) => {
+            for psr_warning in generator.warnings() {
+                warning(psr_warning);
+            }
+
+            // Post-autoload-dump scripts
+            if !args.no_scripts
+                && let Some(composer_json) = composer_json_value.as_ref()
+            {
+                let script_config = ScriptConfig {
+                    working_dir: std::env::current_dir()?,
+                    ..Default::default()
+                };
+
+                if let Some(result) = run_post_autoload_scripts(composer_json, &script_config)?
+                    && !result.success
+                    && let Some(ref err) = result.error
+                {
+                    warning(&format!("Post-autoload script warning: {err}"));
+                }
+            }
+
             let stats = generator.stats();
             let elapsed = start_time.elapsed();
 
@@ -190,7 +251,7 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
             );
             println!(
                 "   {} packages scanned",
-                style(format!("{:>4}", package_count)).cyan()
+                style(format!("{package_count:>4}")).cyan()
             );
 
             // Show timing
@@ -206,13 +267,26 @@ pub async fn run(args: DumpAutoloadArgs) -> Result<()> {
                 style("Failed to generate autoloader").red()
             );
             eprintln!();
-            eprintln!("  {}", e);
+            eprintln!("  {e}");
             eprintln!();
             std::process::exit(1);
         }
     }
 
     Ok(())
+}
+
+/// Load full composer.json as dynamic value for scripts execution.
+fn load_composer_json_value(path: &PathBuf) -> Option<Value> {
+    let content = std::fs::read_to_string(path).ok()?;
+    sonic_rs::from_str(&content).ok()
+}
+
+/// Load Composer config defaults (e.g., optimize-autoloader).
+fn load_composer_config(path: &PathBuf) -> Option<ComposerConfig> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let composer: ComposerJson = sonic_rs::from_str(&content).ok()?;
+    Some(composer.config)
 }
 
 /// Load autoload configuration from a composer.json file (production only).

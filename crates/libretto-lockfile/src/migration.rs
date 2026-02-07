@@ -416,8 +416,10 @@ mod tests {
 
     #[test]
     fn test_migration_no_changes() {
-        let mut lock = ComposerLock::default();
-        lock.plugin_api_version = SchemaVersion::CURRENT.to_string();
+        let lock = ComposerLock {
+            plugin_api_version: SchemaVersion::CURRENT.to_string(),
+            ..Default::default()
+        };
 
         let result = Migrator::new().migrate(lock).unwrap();
         assert!(!result.has_changes());
@@ -425,9 +427,11 @@ mod tests {
 
     #[test]
     fn test_migration_from_v1() {
-        let mut lock = ComposerLock::default();
-        lock.plugin_api_version = "1.0.0".to_string();
-        lock.content_hash = String::new(); // Missing in 1.x
+        let lock = ComposerLock {
+            plugin_api_version: "1.0.0".to_string(),
+            content_hash: String::new(), // Missing in 1.x
+            ..Default::default()
+        };
 
         let result = Migrator::new().migrate(lock).unwrap();
         assert!(result.has_changes());

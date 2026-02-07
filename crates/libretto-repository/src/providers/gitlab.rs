@@ -106,6 +106,7 @@ impl GitLabClient {
     }
 
     /// Create client with shared cache.
+    #[must_use]
     pub fn with_cache(mut self, cache: Arc<RepositoryCache>) -> Self {
         self.cache = cache;
         self

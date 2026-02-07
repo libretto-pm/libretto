@@ -291,7 +291,7 @@ mod tests {
         let normalized = c.normalize_constraint();
 
         // Verify the constraint is normalized correctly
-        assert!(normalized.contains("||"), "Normalized: {}", normalized);
+        assert!(normalized.contains("||"), "Normalized: {normalized}");
 
         // Test individual constraints work
         let c1 = VersionConstraint::new("^1.0");
@@ -385,7 +385,7 @@ mod tests {
         /// Caret constraint should match the exact version it specifies
         #[test]
         fn prop_caret_matches_exact(major in 1u64..20, minor in 0u64..50, patch in 0u64..100) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor, patch);
             prop_assert!(c.matches(&v), "Caret constraint {} should match exact version {}", constraint, v);
@@ -394,7 +394,7 @@ mod tests {
         /// Caret constraint should NOT match versions with higher major
         #[test]
         fn prop_caret_rejects_higher_major(major in 1u64..20, minor in 0u64..50, patch in 0u64..100) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major + 1, 0, 0);
             prop_assert!(!c.matches(&v), "Caret constraint {} should NOT match higher major version {}", constraint, v);
@@ -409,7 +409,7 @@ mod tests {
             minor_add in 0u64..50,
             patch_add in 0u64..100
         ) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor + minor_add, patch + patch_add);
             prop_assert!(c.matches(&v), "Caret constraint {} should match {}", constraint, v);
@@ -418,7 +418,7 @@ mod tests {
         /// Tilde constraint should match the exact version it specifies
         #[test]
         fn prop_tilde_matches_exact(major in 1u64..20, minor in 0u64..50, patch in 0u64..100) {
-            let constraint = format!("~{}.{}.{}", major, minor, patch);
+            let constraint = format!("~{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor, patch);
             prop_assert!(c.matches(&v), "Tilde constraint {} should match exact version {}", constraint, v);
@@ -432,7 +432,7 @@ mod tests {
             patch in 0u64..100,
             patch_add in 0u64..100
         ) {
-            let constraint = format!("~{}.{}.{}", major, minor, patch);
+            let constraint = format!("~{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor, patch + patch_add);
             prop_assert!(c.matches(&v), "Tilde constraint {} should match {}", constraint, v);
@@ -441,7 +441,7 @@ mod tests {
         /// Tilde constraint should NOT match versions with higher minor
         #[test]
         fn prop_tilde_rejects_higher_minor(major in 1u64..20, minor in 0u64..49, patch in 0u64..100) {
-            let constraint = format!("~{}.{}.{}", major, minor, patch);
+            let constraint = format!("~{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor + 1, 0);
             prop_assert!(!c.matches(&v), "Tilde constraint {} should NOT match higher minor version {}", constraint, v);
@@ -450,7 +450,7 @@ mod tests {
         /// Major wildcard (N.*) should match all versions with that major
         #[test]
         fn prop_major_wildcard_matches_same_major(major in 0u64..20, minor in 0u64..100, patch in 0u64..1000) {
-            let constraint = format!("{}.*", major);
+            let constraint = format!("{major}.*");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor, patch);
             prop_assert!(c.matches(&v), "Major wildcard {} should match {}", constraint, v);
@@ -460,7 +460,7 @@ mod tests {
         #[test]
         fn prop_major_wildcard_rejects_different_major(major in 0u64..20, other_major in 0u64..20, minor in 0u64..100, patch in 0u64..1000) {
             prop_assume!(major != other_major);
-            let constraint = format!("{}.*", major);
+            let constraint = format!("{major}.*");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(other_major, minor, patch);
             prop_assert!(!c.matches(&v), "Major wildcard {} should NOT match {}", constraint, v);
@@ -469,7 +469,7 @@ mod tests {
         /// Minor wildcard (N.M.*) should match all versions with that major.minor
         #[test]
         fn prop_minor_wildcard_matches_same_minor(major in 0u64..20, minor in 0u64..50, patch in 0u64..1000) {
-            let constraint = format!("{}.{}.*", major, minor);
+            let constraint = format!("{major}.{minor}.*");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(major, minor, patch);
             prop_assert!(c.matches(&v), "Minor wildcard {} should match {}", constraint, v);
@@ -484,7 +484,7 @@ mod tests {
         /// Constraint normalization is deterministic
         #[test]
         fn prop_normalize_deterministic(major in 0u64..100, minor in 0u64..100, patch in 0u64..100) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c1 = VersionConstraint::new(&constraint);
             let c2 = VersionConstraint::new(&constraint);
 
@@ -504,7 +504,7 @@ mod tests {
             v_minor in 0u64..50,
             v_patch in 0u64..100
         ) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
             let v = Version::new(v_major, v_minor, v_patch);
 
@@ -532,7 +532,7 @@ mod tests {
         /// Constraint serialization roundtrip preserves the constraint
         #[test]
         fn prop_serde_roundtrip(major in 0u64..20, minor in 0u64..50, patch in 0u64..100) {
-            let constraint = format!("^{}.{}.{}", major, minor, patch);
+            let constraint = format!("^{major}.{minor}.{patch}");
             let c = VersionConstraint::new(&constraint);
 
             let json = sonic_rs::to_string(&c).unwrap();
@@ -544,7 +544,7 @@ mod tests {
         /// FromStr and new() produce identical constraints
         #[test]
         fn prop_from_str_equals_new(major in 0u64..20, minor in 0u64..50) {
-            let constraint = format!("~{}.{}", major, minor);
+            let constraint = format!("~{major}.{minor}");
             let c1 = VersionConstraint::new(&constraint);
             let c2: VersionConstraint = constraint.parse().unwrap();
 

@@ -434,11 +434,10 @@ fn check_perforce() -> CheckResult {
 fn check_7z() -> CheckResult {
     // Try different 7z command names
     for cmd in &["7z", "7zz", "7za"] {
-        if let Ok(output) = Command::new(cmd).arg("--help").output() {
-            if output.status.success() {
+        if let Ok(output) = Command::new(cmd).arg("--help").output()
+            && output.status.success() {
                 return CheckResult::Ok(format!("{cmd} available"));
             }
-        }
     }
     CheckResult::Ok("Not installed (optional, for .7z files)".to_string())
 }

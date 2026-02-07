@@ -165,16 +165,14 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     };
 
     // Run pre-update-cmd scripts
-    if !args.dry_run {
-        if let Some(result) = run_pre_install_scripts(&composer, &script_config, true)? {
-            if !result.success {
+    if !args.dry_run
+        && let Some(result) = run_pre_install_scripts(&composer, &script_config, true)?
+            && !result.success {
                 warning(&format!(
                     "Pre-update script warning: {}",
                     result.error.unwrap_or_default()
                 ));
             }
-        }
-    }
 
     // Collect current locked versions
     let mut current_versions: HashMap<String, String> = HashMap::new();
@@ -230,8 +228,8 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
         }
     }
 
-    if !args.no_dev {
-        if let Some(require_dev) = composer.get("require-dev").and_then(|v| v.as_object()) {
+    if !args.no_dev
+        && let Some(require_dev) = composer.get("require-dev").and_then(|v| v.as_object()) {
             for (name, constraint) in require_dev {
                 if is_platform_package(name) {
                     continue;
@@ -244,11 +242,12 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
                 }
             }
         }
-    }
 
     // Resolve dependencies
-    let fetcher =
-        Arc::new(Fetcher::new().map_err(|e| anyhow::anyhow!("Failed to create fetcher: {e}"))?);
+    let fetcher = Arc::new(
+        Fetcher::new_with_composer_repositories(&composer)
+            .map_err(|e| anyhow::anyhow!("Failed to create fetcher: {e}"))?,
+    );
     let resolver = TurboResolver::new(fetcher.clone(), config);
 
     let spinner = Spinner::new("Resolving dependencies...");
@@ -428,14 +427,13 @@ pub async fn run(args: UpdateArgs) -> Result<()> {
     }
 
     // Run post-update-cmd scripts
-    if let Some(result) = run_post_install_scripts(&composer, &script_config, true)? {
-        if !result.success {
+    if let Some(result) = run_post_install_scripts(&composer, &script_config, true)?
+        && !result.success {
             warning(&format!(
                 "Post-update script warning: {}",
                 result.error.unwrap_or_default()
             ));
         }
-    }
 
     // Show funding info (like Composer)
     let funded_count = resolution
@@ -607,9 +605,5 @@ fn parse_stability(s: &str) -> Option<Stability> {
 }
 
 fn is_platform_package(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("php-")
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name.starts_with("api-")
+    libretto_core::is_platform_package_name(name)
 }

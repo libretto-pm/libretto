@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// A mock async fetcher that wraps a synchronous MemorySource for benchmarking.
+/// A mock async fetcher that wraps a synchronous `MemorySource` for benchmarking.
 struct MockFetcher {
     index: Arc<PackageIndex<MemorySource>>,
 }

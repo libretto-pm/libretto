@@ -14,7 +14,7 @@ fn bench_php_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("autoloader/parse");
 
     let simple_class = generate_php_class("App", "SimpleClass");
-    let complex_class = r#"<?php
+    let complex_class = r"<?php
 declare(strict_types=1);
 
 namespace App\Services;
@@ -84,7 +84,7 @@ class ComplexService extends BaseService {
         return $this;
     }
 }
-"#;
+";
 
     // Simple class parsing throughput
     group.throughput(Throughput::Bytes(simple_class.len() as u64));
@@ -115,7 +115,7 @@ class ComplexService extends BaseService {
     group.finish();
 }
 
-/// Benchmark AutoloadConfig creation and serialization.
+/// Benchmark `AutoloadConfig` creation and serialization.
 fn bench_autoload_config(c: &mut Criterion) {
     let mut group = c.benchmark_group("autoloader/config");
 
@@ -187,7 +187,7 @@ fn bench_small_project(c: &mut Criterion) {
                         .into_iter()
                         .filter_map(|e| e.ok())
                     {
-                        if entry.path().extension().map_or(false, |ext| ext == "php") {
+                        if entry.path().extension().is_some_and(|ext| ext == "php") {
                             count += 1;
                         }
                     }
@@ -221,7 +221,7 @@ fn bench_medium_project(c: &mut Criterion) {
                         .into_iter()
                         .filter_map(|e| e.ok())
                     {
-                        if entry.path().extension().map_or(false, |ext| ext == "php") {
+                        if entry.path().extension().is_some_and(|ext| ext == "php") {
                             count += 1;
                         }
                     }
@@ -256,7 +256,7 @@ fn bench_large_project(c: &mut Criterion) {
                     let files: Vec<_> = walkdir::WalkDir::new(root)
                         .into_iter()
                         .filter_map(|e| e.ok())
-                        .filter(|e| e.path().extension().map_or(false, |ext| ext == "php"))
+                        .filter(|e| e.path().extension().is_some_and(|ext| ext == "php"))
                         .collect();
 
                     // Parallel content reading
@@ -274,7 +274,7 @@ fn bench_large_project(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark IncrementalCache operations.
+/// Benchmark `IncrementalCache` operations.
 fn bench_incremental_cache(c: &mut Criterion) {
     let mut group = c.benchmark_group("autoloader/cache");
     group.sample_size(20);
@@ -312,8 +312,8 @@ fn bench_classmap_generation(c: &mut Criterion) {
         // Pre-generate class data
         let classes: Vec<(String, PathBuf)> = (0..num_classes)
             .map(|i| {
-                let namespace = format!("App\\Models\\Model{}", i);
-                let path = PathBuf::from(format!("src/Models/Model{}.php", i));
+                let namespace = format!("App\\Models\\Model{i}");
+                let path = PathBuf::from(format!("src/Models/Model{i}.php"));
                 (namespace, path)
             })
             .collect();
@@ -348,7 +348,7 @@ fn bench_classmap_generation(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark OptimizationLevel operations.
+/// Benchmark `OptimizationLevel` operations.
 fn bench_optimization_levels(c: &mut Criterion) {
     let mut group = c.benchmark_group("autoloader/optimization");
 

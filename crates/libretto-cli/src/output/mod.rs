@@ -202,8 +202,8 @@ mod tests {
     fn test_format_duration() {
         assert!(format_duration(std::time::Duration::from_micros(500)).contains("us"));
         assert!(format_duration(std::time::Duration::from_millis(500)).contains("ms"));
-        assert!(format_duration(std::time::Duration::from_secs(5)).contains("s"));
-        assert!(format_duration(std::time::Duration::from_secs(120)).contains("m"));
+        assert!(format_duration(std::time::Duration::from_secs(5)).contains('s'));
+        assert!(format_duration(std::time::Duration::from_secs(120)).contains('m'));
     }
 
     #[test]

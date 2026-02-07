@@ -28,12 +28,14 @@ use libretto_resolver::turbo::{TurboConfig, TurboResolver};
 use libretto_resolver::{ComposerConstraint, Dependency, PackageName, ResolutionMode};
 use semver::Version;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait, Value};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 use tracing::debug;
+
+const INSTALL_MARKER_FILE: &str = ".libretto-installed.json";
 
 /// Arguments for the install command.
 #[derive(Args, Debug, Clone)]
@@ -180,6 +182,15 @@ pub async fn run(args: InstallArgs) -> Result<()> {
     // Check for lock file
     let has_lock = composer_lock_path.exists();
 
+    if !has_lock {
+        warning("No composer.lock found; resolving dependencies from composer.json.");
+        if composer.get("type").and_then(Value::as_str) == Some("project") {
+            warning(
+                "This repository is type `project`; unlocked installs are less reproducible for production.",
+            );
+        }
+    }
+
     let result = if has_lock && !args.prefer_lowest {
         install_from_lock(
             &composer_lock_path,
@@ -221,7 +232,7 @@ pub async fn run(args: InstallArgs) -> Result<()> {
         }
         Err(e) => {
             if let Some(p) = &progress {
-                p.finish_error(&e.to_string());
+                p.stop();
             }
             return Err(e);
         }
@@ -264,6 +275,10 @@ pub async fn run(args: InstallArgs) -> Result<()> {
         } else if let Some(ref err) = result.error {
             warning(&format!("Post-install script warning: {err}"));
         }
+    }
+
+    if !args.dry_run {
+        emit_post_install_package_notes(&composer_lock_path, !args.no_dev);
     }
 
     // Run security audit if requested
@@ -355,6 +370,136 @@ async fn run_security_audit(lock_path: &PathBuf, args: &InstallArgs) -> Result<(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct AbandonedPackageNote {
+    name: String,
+    replacement: Option<String>,
+}
+
+#[derive(Debug, Default)]
+struct LockPackageNotes {
+    funding_packages: usize,
+    abandoned_packages: Vec<AbandonedPackageNote>,
+}
+
+fn emit_post_install_package_notes(lock_path: &PathBuf, include_dev: bool) {
+    let notes = match collect_lock_package_notes(lock_path, include_dev) {
+        Ok(notes) => notes,
+        Err(err) => {
+            debug!(
+                error = %err,
+                path = %lock_path.display(),
+                "failed to collect post-install package notes"
+            );
+            return;
+        }
+    };
+
+    for abandoned in &notes.abandoned_packages {
+        if let Some(replacement) = &abandoned.replacement {
+            warning(&format!(
+                "Package {} is abandoned, you should avoid using it. Use {} instead.",
+                abandoned.name, replacement
+            ));
+        } else {
+            warning(&format!(
+                "Package {} is abandoned, you should avoid using it. No replacement was suggested.",
+                abandoned.name
+            ));
+        }
+    }
+
+    if notes.funding_packages > 0 {
+        let noun = if notes.funding_packages == 1 {
+            "package"
+        } else {
+            "packages"
+        };
+        let verb = if notes.funding_packages == 1 {
+            "is"
+        } else {
+            "are"
+        };
+        info(&format!(
+            "{} {} you are using {} looking for funding.",
+            notes.funding_packages, noun, verb
+        ));
+        info("Use the `composer fund` command to find out more!");
+    }
+}
+
+fn collect_lock_package_notes(lock_path: &PathBuf, include_dev: bool) -> Result<LockPackageNotes> {
+    if !lock_path.exists() {
+        return Ok(LockPackageNotes::default());
+    }
+
+    let lock_content = std::fs::read_to_string(lock_path)?;
+    let lock: Value = sonic_rs::from_str(&lock_content)?;
+
+    let mut funding_names = BTreeSet::new();
+    let mut abandoned = BTreeSet::new();
+    let sections: &[&str] = if include_dev {
+        &["packages", "packages-dev"]
+    } else {
+        &["packages"]
+    };
+
+    for section in sections {
+        let Some(packages) = lock.get(section).and_then(Value::as_array) else {
+            continue;
+        };
+        for package in packages {
+            let Some(name) = package.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+
+            if package
+                .get("funding")
+                .and_then(Value::as_array)
+                .is_some_and(|funding| !funding.is_empty())
+            {
+                funding_names.insert(name.to_string());
+            }
+
+            let Some(abandoned_field) = package.get("abandoned") else {
+                continue;
+            };
+
+            match abandoned_field.as_bool() {
+                Some(true) => {
+                    abandoned.insert(AbandonedPackageNote {
+                        name: name.to_string(),
+                        replacement: None,
+                    });
+                }
+                Some(false) => {}
+                None => {
+                    if let Some(raw_replacement) = abandoned_field.as_str() {
+                        let replacement = raw_replacement.trim();
+                        if replacement.is_empty() || replacement.eq_ignore_ascii_case("false") {
+                            continue;
+                        }
+                        let replacement = if replacement.eq_ignore_ascii_case("true") {
+                            None
+                        } else {
+                            Some(replacement.to_string())
+                        };
+                        abandoned.insert(AbandonedPackageNote {
+                            name: name.to_string(),
+                            replacement,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(LockPackageNotes {
+        funding_packages: funding_names.len(),
+        abandoned_packages: abandoned.into_iter().collect(),
+    })
 }
 
 /// Install from an existing lock file.
@@ -478,8 +623,10 @@ async fn resolve_and_install(
         .unwrap_or(Stability::Stable);
 
     // Create fetcher
-    let fetcher =
-        Arc::new(Fetcher::new().map_err(|e| anyhow::anyhow!("Failed to create fetcher: {e}"))?);
+    let fetcher = Arc::new(
+        Fetcher::new_with_composer_repositories(composer)
+            .map_err(|e| anyhow::anyhow!("Failed to create fetcher: {e}"))?,
+    );
 
     // Configure resolver
     let config = TurboConfig {
@@ -596,13 +743,66 @@ fn parse_stability(s: &str) -> Option<Stability> {
 }
 
 fn is_platform_package(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("php-")
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name == "composer"
-        || name == "composer-plugin-api"
-        || name == "composer-runtime-api"
+    libretto_core::is_platform_package_name(name)
+}
+
+fn install_marker_path(dest: &std::path::Path) -> PathBuf {
+    dest.join(INSTALL_MARKER_FILE)
+}
+
+fn is_package_already_installed(
+    dest: &std::path::Path,
+    version: &str,
+    dist_url: &str,
+    dist_shasum: Option<&str>,
+) -> bool {
+    if !dest.is_dir() {
+        return false;
+    }
+    if !dest.join("composer.json").is_file() {
+        return false;
+    }
+
+    let marker_path = install_marker_path(dest);
+    let Ok(marker_content) = std::fs::read_to_string(marker_path) else {
+        return false;
+    };
+    let Ok(marker) = sonic_rs::from_str::<Value>(&marker_content) else {
+        return false;
+    };
+
+    let marker_version = marker.get("version").and_then(Value::as_str).unwrap_or("");
+    let marker_url = marker.get("dist_url").and_then(Value::as_str).unwrap_or("");
+    let marker_shasum = marker
+        .get("dist_shasum")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let expected_shasum = dist_shasum.unwrap_or("");
+
+    marker_version == version && marker_url == dist_url && marker_shasum == expected_shasum
+}
+
+fn write_install_marker(
+    dest: &std::path::Path,
+    version: &str,
+    dist_url: &str,
+    dist_shasum: Option<&str>,
+) -> Result<()> {
+    if !dest.is_dir() {
+        return Ok(());
+    }
+
+    let mut marker = BTreeMap::new();
+    marker.insert("version".to_string(), Value::from(version));
+    marker.insert("dist_url".to_string(), Value::from(dist_url));
+    marker.insert(
+        "dist_shasum".to_string(),
+        Value::from(dist_shasum.unwrap_or("")),
+    );
+
+    let marker_content = sonic_rs::to_string(&marker)?;
+    std::fs::write(install_marker_path(dest), marker_content)?;
+    Ok(())
 }
 
 /// Package information for installation.
@@ -702,7 +902,7 @@ fn show_packages_table(packages: &[PackageInfo]) {
 /// Install packages with parallel downloads and CAS cache.
 async fn install_packages(
     packages: &[PackageInfo],
-    vendor_dir: &PathBuf,
+    vendor_dir: &std::path::Path,
     base_dir: &std::path::Path,
     installer_paths: &InstallerPaths,
     args: &InstallArgs,
@@ -745,8 +945,10 @@ async fn install_packages(
 
     // Separate cached vs need-download
     let mut to_download: Vec<(String, String, String, PathBuf, Option<String>)> = Vec::new();
-    let mut from_cache: Vec<(String, PathBuf, PathBuf)> = Vec::new();
+    let mut from_cache: Vec<(String, String, String, Option<String>, PathBuf, PathBuf)> =
+        Vec::new();
     let mut skipped = 0;
+    let mut unchanged = 0;
 
     for pkg in packages {
         // Check if this package has a custom install path
@@ -759,10 +961,22 @@ async fn install_packages(
         if let Some(ref url_str) = pkg.dist_url {
             let url = convert_github_api_url(url_str);
 
+            if is_package_already_installed(&dest, &pkg.version, &url, pkg.dist_shasum.as_deref()) {
+                unchanged += 1;
+                continue;
+            }
+
             // Use is_cached for quick check, then get_cached_path for the actual path
             if cas_cache::is_cached(&url) {
                 if let Some(cache_path) = cas_cache::get_cached_path(&url) {
-                    from_cache.push((pkg.name.clone(), cache_path, dest));
+                    from_cache.push((
+                        pkg.name.clone(),
+                        pkg.version.clone(),
+                        url,
+                        pkg.dist_shasum.clone(),
+                        cache_path,
+                        dest,
+                    ));
                 } else {
                     // Cache marker exists but path retrieval failed, download
                     to_download.push((
@@ -792,6 +1006,11 @@ async fn install_packages(
     let total = cached_count + download_count;
 
     if total == 0 {
+        if unchanged > 0 {
+            info(&format!(
+                "Nothing to install; {unchanged} package(s) already installed"
+            ));
+        }
         if skipped > 0 {
             warning(&format!("No download URLs for {skipped} packages"));
         }
@@ -808,12 +1027,16 @@ async fn install_packages(
     }
 
     // Link cached packages first (instant)
-    for (name, cache_path, dest) in &from_cache {
+    for (name, version, url, shasum, cache_path, dest) in &from_cache {
         if let Some(p) = progress {
             p.set_current(name);
         }
         if let Err(e) = cas_cache::link_from_cache(cache_path, dest) {
             warning(&format!("Cache link failed for {name}: {e}"));
+        } else if let Err(e) = write_install_marker(dest, version, url, shasum.as_deref()) {
+            warning(&format!(
+                "Installed package marker write failed for {name}: {e}"
+            ));
         }
         if let Some(p) = progress {
             p.inc_completed();
@@ -891,6 +1114,13 @@ async fn install_packages(
                         p.add_bytes(total_bytes.load(Ordering::Relaxed));
                     }
                     let _ = cas_cache::store_in_cache(&url, &dest_path);
+                    if let Err(e) =
+                        write_install_marker(&dest_path, &version, &url, shasum.as_deref())
+                    {
+                        warning(&format!(
+                            "Installed package marker write failed for {name}: {e}"
+                        ));
+                    }
                 }
                 Err(e) => {
                     let error_str = e.to_string();
@@ -937,9 +1167,8 @@ async fn install_packages(
             )
         } else {
             format!(
-                "Authentication required for {}.\n\
-                 Please provide credentials to access this repository.",
-                domain
+                "Authentication required for {domain}.\n\
+                 Please provide credentials to access this repository."
             )
         };
 
@@ -977,6 +1206,13 @@ async fn install_packages(
                                 p.add_bytes(total_bytes.load(Ordering::Relaxed));
                             }
                             let _ = cas_cache::store_in_cache(&url, &dest_path);
+                            if let Err(e) =
+                                write_install_marker(&dest_path, &version, &url, shasum.as_deref())
+                            {
+                                warning(&format!(
+                                    "Installed package marker write failed for {name}: {e}"
+                                ));
+                            }
                         }
                         Err(e) => {
                             failed_count.fetch_add(1, Ordering::Relaxed);
@@ -1015,6 +1251,7 @@ async fn install_packages(
     let installed = completed.load(Ordering::Relaxed) + cached_count as u64;
     let failed = failed_count.load(Ordering::Relaxed);
     let bytes = total_bytes.load(Ordering::Relaxed);
+    let unchanged_count = unchanged as u64;
 
     for err in &errors {
         warning(&format!("Failed: {err}"));
@@ -1036,6 +1273,7 @@ async fn install_packages(
             installed = installed,
             cached = cached_count,
             downloaded = download_count,
+            unchanged = unchanged_count,
             bytes = bytes,
             elapsed_ms = elapsed.as_millis(),
             "installation complete"
@@ -1043,14 +1281,19 @@ async fn install_packages(
 
         if !args.no_progress {
             println!(
-                "  Installed {} packages in {:.2}s ({} downloaded{}, {} from cache)",
+                "  Installed {} packages in {:.2}s ({} downloaded{}, {} from cache, {} already installed)",
                 installed,
                 elapsed.as_secs_f64(),
                 format_bytes(bytes),
                 speed,
-                cached_count
+                cached_count,
+                unchanged_count
             );
         }
+    } else if unchanged_count > 0 && !args.no_progress {
+        println!(
+            "  Nothing to install, update or remove ({unchanged_count} package(s) already installed)"
+        );
     }
 
     Ok(())
@@ -1066,6 +1309,7 @@ async fn install_packages(
 /// - Bearer tokens
 /// - Forgejo/Gitea tokens
 /// - Custom HTTP headers
+#[allow(clippy::too_many_arguments)]
 async fn download_and_extract_with_credential(
     client: &reqwest::Client,
     name: &str,
@@ -1093,12 +1337,13 @@ async fn download_and_extract_with_credential(
 
     // Check for GitHub rate limit
     if is_github_rate_limit_error(url, status.as_u16()) {
-        let rate_limit =
-            parse_rate_limit_headers(url, response.headers()).unwrap_or(GitHubRateLimitInfo {
+        let rate_limit = parse_rate_limit_headers(url, response.headers()).unwrap_or_else(|| {
+            GitHubRateLimitInfo {
                 url: url.to_string(),
                 limit: 60,
                 reset: 0,
-            });
+            }
+        });
 
         anyhow::bail!(
             "GitHub rate limit exceeded for {}: {} calls/hr limit, resets at {}",
@@ -1109,7 +1354,7 @@ async fn download_and_extract_with_credential(
     }
 
     if !status.is_success() {
-        anyhow::bail!("HTTP {}", status);
+        anyhow::bail!("HTTP {status}");
     }
 
     let bytes = response
@@ -1357,6 +1602,8 @@ fn generate_autoloader(vendor_dir: &PathBuf, args: &InstallArgs) -> Result<()> {
         autoload: AutoloadSection,
         #[serde(default, rename = "autoload-dev")]
         autoload_dev: AutoloadSection,
+        #[serde(default)]
+        config: ComposerConfig,
     }
 
     #[derive(Debug, Default, Deserialize)]
@@ -1378,6 +1625,14 @@ fn generate_autoloader(vendor_dir: &PathBuf, args: &InstallArgs) -> Result<()> {
     enum Psr4Value {
         Single(String),
         Multiple(Vec<String>),
+    }
+
+    #[derive(Debug, Default, Deserialize)]
+    struct ComposerConfig {
+        #[serde(default, rename = "optimize-autoloader")]
+        optimize_autoloader: bool,
+        #[serde(default, rename = "classmap-authoritative")]
+        classmap_authoritative: bool,
     }
 
     impl Psr4Value {
@@ -1450,15 +1705,32 @@ fn generate_autoloader(vendor_dir: &PathBuf, args: &InstallArgs) -> Result<()> {
         Some(config)
     }
 
-    let level = if args.classmap_authoritative {
+    let composer_config = std::fs::read_to_string("composer.json")
+        .ok()
+        .and_then(|content| sonic_rs::from_str::<ComposerJson>(&content).ok())
+        .map(|composer| composer.config)
+        .unwrap_or_default();
+
+    let classmap_authoritative =
+        args.classmap_authoritative || composer_config.classmap_authoritative;
+    let optimize_autoloader = if classmap_authoritative {
+        true
+    } else {
+        args.optimize_autoloader || composer_config.optimize_autoloader
+    };
+
+    let level = if classmap_authoritative {
         OptimizationLevel::Authoritative
-    } else if args.optimize_autoloader {
+    } else if optimize_autoloader {
         OptimizationLevel::Optimized
     } else {
         OptimizationLevel::None
     };
 
-    let mut generator = AutoloaderGenerator::with_optimization(vendor_dir.clone(), level);
+    // Persist autoload scan state so repeated installs avoid full rescans.
+    let cache_path = vendor_dir.join("composer").join(".libretto-autoload.cache");
+    let mut generator =
+        AutoloaderGenerator::with_optimization(vendor_dir.clone(), level).with_cache(cache_path);
 
     // Scan vendor directory for installed packages
     if let Ok(entries) = std::fs::read_dir(vendor_dir) {
@@ -1501,6 +1773,9 @@ fn generate_autoloader(vendor_dir: &PathBuf, args: &InstallArgs) -> Result<()> {
     }
 
     generator.generate()?;
+    for psr_warning in generator.warnings() {
+        warning(psr_warning);
+    }
 
     Ok(())
 }

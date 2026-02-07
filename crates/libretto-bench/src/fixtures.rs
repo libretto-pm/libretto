@@ -11,7 +11,7 @@ pub fn generate_composer_json(num_dependencies: usize) -> String {
 
     for i in 0..num_dependencies {
         let vendor = format!("vendor{}", i / 10);
-        let package = format!("package{}", i);
+        let package = format!("package{i}");
         let constraint = match rng.random_range(0..5) {
             0 => format!("^{}.0", rng.random_range(1..10)),
             1 => format!("~{}.{}", rng.random_range(1..10), rng.random_range(0..10)),
@@ -49,7 +49,7 @@ pub fn generate_composer_lock(num_packages: usize) -> String {
 
     for i in 0..num_packages {
         let vendor = format!("vendor{}", i / 10);
-        let package = format!("package{}", i);
+        let package = format!("package{i}");
         packages.push(serde_json::json!({
             "name": format!("{vendor}/{package}"),
             "version": format!("{}.{}.{}", 1 + i / 100, (i / 10) % 10, i % 10),
@@ -92,7 +92,7 @@ pub fn generate_composer_lock(num_packages: usize) -> String {
 #[must_use]
 pub fn generate_php_class(namespace: &str, class_name: &str) -> String {
     format!(
-        r#"<?php
+        r"<?php
 
 namespace {namespace};
 
@@ -128,7 +128,7 @@ class {class_name}
         return $this;
     }}
 }}
-"#
+"
     )
 }
 
@@ -137,7 +137,7 @@ class {class_name}
 pub struct DependencyGraph {
     /// Package names.
     pub packages: Vec<String>,
-    /// Dependencies (package_index -> list of (dep_index, constraint)).
+    /// Dependencies (`package_index` -> list of (`dep_index`, constraint)).
     pub dependencies: Vec<Vec<(usize, String)>>,
 }
 
@@ -148,8 +148,8 @@ impl DependencyGraph {
         let packages: Vec<String> = (0..size).map(|i| format!("pkg{i}")).collect();
         let mut dependencies = vec![vec![]; size];
 
-        for i in 1..size {
-            dependencies[i].push((i - 1, "^1.0".to_string()));
+        for (i, deps) in dependencies.iter_mut().enumerate().take(size).skip(1) {
+            deps.push((i - 1, "^1.0".to_string()));
         }
 
         Self {
@@ -183,7 +183,7 @@ impl DependencyGraph {
         let packages: Vec<String> = (0..num_packages).map(|i| format!("pkg{i}")).collect();
         let mut dependencies = vec![vec![]; num_packages];
 
-        for i in 0..num_packages {
+        for (i, dep_list) in dependencies.iter_mut().enumerate().take(num_packages) {
             let num_deps = rng.random_range(0..=avg_deps * 2).min(i);
             let mut added = std::collections::HashSet::new();
 
@@ -191,7 +191,7 @@ impl DependencyGraph {
                 let dep = rng.random_range(0..i);
                 if added.insert(dep) {
                     let constraint = format!("^{}.0", rng.random_range(1..5));
-                    dependencies[i].push((dep, constraint));
+                    dep_list.push((dep, constraint));
                 }
             }
         }

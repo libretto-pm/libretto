@@ -67,7 +67,7 @@ fn create_test_repo(num_files: usize, num_commits: usize) -> Option<(tempfile::T
     Some((temp_dir, bare_path))
 }
 
-/// Benchmark VcsType detection.
+/// Benchmark `VcsType` detection.
 fn bench_vcs_detection(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcs/detection");
 
@@ -106,7 +106,7 @@ fn bench_vcs_detection(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark VcsRef parsing for various ref formats.
+/// Benchmark `VcsRef` parsing for various ref formats.
 fn bench_vcs_ref_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcs/ref_parsing");
 
@@ -130,7 +130,7 @@ fn bench_vcs_ref_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark VcsUrl parsing for various URL formats.
+/// Benchmark `VcsUrl` parsing for various URL formats.
 fn bench_url_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcs/url_parsing");
 
@@ -166,7 +166,7 @@ fn bench_url_parsing(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark CloneOptions construction.
+/// Benchmark `CloneOptions` construction.
 fn bench_clone_options(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcs/clone_options");
 
@@ -189,7 +189,7 @@ fn bench_clone_options(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark VcsManager creation.
+/// Benchmark `VcsManager` creation.
 fn bench_manager_creation(c: &mut Criterion) {
     let mut group = c.benchmark_group("vcs/manager");
 
@@ -278,7 +278,7 @@ fn bench_protocol_detection(c: &mut Criterion) {
 
     for (url, expected_protocol) in urls_with_protocols {
         group.bench_with_input(
-            BenchmarkId::new("detect", format!("{:?}", expected_protocol)),
+            BenchmarkId::new("detect", format!("{expected_protocol:?}")),
             &url,
             |b, u| {
                 b.iter(|| {

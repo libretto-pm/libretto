@@ -148,6 +148,7 @@ impl RepositoryManager {
     }
 
     /// Create manager with tiered cache.
+    #[must_use]
     pub fn with_tiered_cache(mut self, cache: Arc<TieredCache>) -> Self {
         self.tiered_cache = Some(cache.clone());
         self.cache = Arc::new(RepositoryCache::with_tiered_cache(cache));
@@ -505,7 +506,8 @@ impl RepositoryManager {
 
     /// Send download notification for a package.
     pub async fn notify_download(&self, package_name: &str, version: &str) {
-        if let Some(url) = self.default_packagist_url.read().clone()
+        let default_url = self.default_packagist_url.read().clone();
+        if let Some(url) = default_url
             && let Ok(client) = self.get_packagist_client(&url)
         {
             client.notify_download(package_name, version).await;
@@ -614,7 +616,7 @@ mod tests {
         stats.successful_lookups.store(90, Ordering::Relaxed);
         stats.total_lookup_time_ms.store(5000, Ordering::Relaxed);
 
-        assert_eq!(stats.avg_lookup_time_ms(), 50.0);
-        assert_eq!(stats.success_rate(), 90.0);
+        assert!((stats.avg_lookup_time_ms() - 50.0).abs() < f64::EPSILON);
+        assert!((stats.success_rate() - 90.0).abs() < f64::EPSILON);
     }
 }

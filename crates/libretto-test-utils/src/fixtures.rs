@@ -220,7 +220,7 @@ impl Fixtures {
         })
     }
 
-    /// WordPress Bedrock-like composer.json.
+    /// `WordPress` Bedrock-like composer.json.
     #[must_use]
     pub fn wordpress_bedrock_composer_json() -> Value {
         json!({
@@ -261,7 +261,7 @@ impl Fixtures {
         })
     }
 
-    /// PHPUnit composer.json (testing framework).
+    /// `PHPUnit` composer.json (testing framework).
     #[must_use]
     pub fn phpunit_composer_json() -> Value {
         json!({
@@ -709,7 +709,7 @@ impl Fixtures {
     #[must_use]
     pub fn php_class_content(namespace: &str, class_name: &str) -> String {
         format!(
-            r#"<?php
+            r"<?php
 
 declare(strict_types=1);
 
@@ -750,7 +750,7 @@ class {class_name}
         return $this;
     }}
 }}
-"#
+"
         )
     }
 
@@ -758,7 +758,7 @@ class {class_name}
     #[must_use]
     pub fn php_interface_content(namespace: &str, interface_name: &str) -> String {
         format!(
-            r#"<?php
+            r"<?php
 
 declare(strict_types=1);
 
@@ -772,7 +772,7 @@ interface {interface_name}
     public function execute(): void;
     public function getResult(): mixed;
 }}
-"#
+"
         )
     }
 
@@ -806,7 +806,7 @@ trait {trait_name}
     #[must_use]
     pub fn php_enum_content(namespace: &str, enum_name: &str) -> String {
         format!(
-            r#"<?php
+            r"<?php
 
 declare(strict_types=1);
 
@@ -832,7 +832,7 @@ enum {enum_name}: string
         }};
     }}
 }}
-"#
+"
         )
     }
 }

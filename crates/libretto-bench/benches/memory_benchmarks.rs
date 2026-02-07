@@ -80,7 +80,7 @@ fn bench_string_allocations(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark HashMap allocation (common for dependency maps).
+/// Benchmark `HashMap` allocation (common for dependency maps).
 fn bench_hashmap_allocations(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory/hashmap");
 
@@ -109,7 +109,7 @@ fn bench_hashmap_allocations(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark BTreeMap vs HashMap for sorted output (lockfiles need determinism).
+/// Benchmark `BTreeMap` vs `HashMap` for sorted output (lockfiles need determinism).
 fn bench_btreemap_vs_hashmap(c: &mut Criterion) {
     let mut group = c.benchmark_group("memory/map_comparison");
 

@@ -45,19 +45,18 @@ impl InstallerPaths {
     pub fn from_composer(composer: &Value) -> Self {
         let mut paths = Vec::new();
 
-        if let Some(extra) = composer.get(&"extra").and_then(|e| e.as_object()) {
-            if let Some(installer_paths) = extra.get(&"installer-paths").and_then(|p| p.as_object())
+        if let Some(extra) = composer.get("extra").and_then(|e| e.as_object())
+            && let Some(installer_paths) = extra.get(&"installer-paths").and_then(|p| p.as_object())
             {
                 for (path_template, matchers) in installer_paths {
                     let mut path_matchers = Vec::new();
 
                     if let Some(arr) = matchers.as_array() {
                         for matcher in arr {
-                            if let Some(m) = matcher.as_str() {
-                                if let Some(matcher) = parse_matcher(m) {
+                            if let Some(m) = matcher.as_str()
+                                && let Some(matcher) = parse_matcher(m) {
                                     path_matchers.push(matcher);
                                 }
-                            }
                         }
                     }
 
@@ -66,7 +65,6 @@ impl InstallerPaths {
                     }
                 }
             }
-        }
 
         debug!(
             "Parsed {} installer-paths rules",

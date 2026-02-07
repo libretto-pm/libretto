@@ -63,15 +63,14 @@ pub async fn run(args: RemoveArgs) -> Result<()> {
             ScriptEvent::PrePackageUninstall,
             package,
         );
-        let mut found = false;
-
-        // Try to remove from require
-        if !args.dev
+        let mut found = if !args.dev
             && let Some(require) = composer.get_mut("require").and_then(|v| v.as_object_mut())
             && require.remove(package).is_some()
         {
-            found = true;
-        }
+            true
+        } else {
+            false
+        };
 
         // Try to remove from require-dev
         if (args.dev || !found)

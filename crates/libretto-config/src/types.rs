@@ -478,7 +478,7 @@ pub enum RepositoryConfig {
     /// Disable a repository (e.g., packagist.org).
     Disabled(bool),
     /// Full repository configuration.
-    Config(RepositoryDefinition),
+    Config(Box<RepositoryDefinition>),
 }
 
 /// Repository definition.

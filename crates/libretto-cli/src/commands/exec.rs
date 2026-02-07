@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use clap::Args;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Arguments for the exec command
 #[derive(Args, Debug, Clone)]
@@ -61,7 +61,7 @@ fn find_binary(vendor_bin: &PathBuf, name: &str) -> Result<PathBuf> {
     #[cfg(windows)]
     {
         for ext in &["", ".bat", ".cmd", ".exe", ".phar"] {
-            let with_ext = vendor_bin.join(format!("{}{}", name, ext));
+            let with_ext = vendor_bin.join(format!("{name}{ext}"));
             if with_ext.exists() {
                 return Ok(with_ext);
             }
@@ -78,17 +78,22 @@ fn find_binary(vendor_bin: &PathBuf, name: &str) -> Result<PathBuf> {
     }
 
     // List available binaries in error message
+    #[cfg(unix)]
     let available: Vec<String> = std::fs::read_dir(vendor_bin)?
         .filter_map(std::result::Result::ok)
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            // Skip bat files on Unix, show them on Windows
-            #[cfg(unix)]
             if name.ends_with(".bat") {
-                return None;
+                None
+            } else {
+                Some(name)
             }
-            Some(name)
         })
+        .collect();
+    #[cfg(not(unix))]
+    let available: Vec<String> = std::fs::read_dir(vendor_bin)?
+        .filter_map(std::result::Result::ok)
+        .map(|e| e.file_name().to_string_lossy().to_string())
         .collect();
 
     anyhow::bail!(
@@ -155,7 +160,7 @@ fn list_binaries() -> Result<()> {
     Ok(())
 }
 
-fn detect_binary_source(vendor_bin: &PathBuf, binary_name: &str) -> String {
+fn detect_binary_source(vendor_bin: &Path, binary_name: &str) -> String {
     let binary_path = vendor_bin.join(binary_name);
 
     // Try to read the binary and find package info

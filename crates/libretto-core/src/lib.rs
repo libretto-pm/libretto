@@ -14,12 +14,14 @@ pub mod error;
 mod hash;
 mod json;
 mod package;
+mod platform;
 mod version;
 
 pub use error::{Error, Result};
 pub use hash::{ContentHash, ContentHasher};
 pub use json::{from_json, from_json_slice, to_json, to_json_pretty};
 pub use package::{Author, Dependency, Package, PackageId, PackageSource, PackageType};
+pub use platform::is_platform_package_name;
 pub use version::VersionConstraint;
 
 // Re-export commonly used types

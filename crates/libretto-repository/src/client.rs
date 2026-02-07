@@ -698,7 +698,7 @@ mod tests {
         stats.successes.store(95, Ordering::Relaxed);
         stats.total_request_time_ms.store(5000, Ordering::Relaxed);
 
-        assert_eq!(stats.avg_request_time_ms(), 50.0);
-        assert_eq!(stats.success_rate(), 95.0);
+        assert!((stats.avg_request_time_ms() - 50.0).abs() < f64::EPSILON);
+        assert!((stats.success_rate() - 95.0).abs() < f64::EPSILON);
     }
 }

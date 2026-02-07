@@ -67,7 +67,7 @@ pub fn random_version_with_prerelease() -> String {
     if rng.gen_bool(0.3) {
         let prerelease = ["alpha", "beta", "rc", "dev"].choose(&mut rng).unwrap();
         let num = rng.gen_range(1..10);
-        format!("{}-{}.{}", version, prerelease, num)
+        format!("{version}-{prerelease}.{num}")
     } else {
         version
     }
@@ -198,7 +198,7 @@ pub struct GeneratedPackage {
     pub name: String,
     /// Available versions.
     pub versions: Vec<String>,
-    /// Dependencies for each version: version -> [(dep_name, constraint)].
+    /// Dependencies for each version: version -> [(`dep_name`, constraint)].
     pub dependencies: HashMap<String, Vec<(String, String)>>,
 }
 
@@ -238,7 +238,7 @@ impl GeneratedGraph {
         }
 
         // Generate dependencies (ensuring acyclic if configured)
-        for i in 0..config.package_count {
+        for (i, package) in packages.iter_mut().enumerate().take(config.package_count) {
             let max_deps = (config.avg_deps * 2).min(i);
             let dep_count = if i == 0 {
                 0
@@ -248,7 +248,7 @@ impl GeneratedGraph {
 
             let mut deps_for_pkg: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
-            for version in &packages[i].versions {
+            for version in &package.versions {
                 let mut version_deps = Vec::new();
                 let mut used_deps = HashSet::new();
 
@@ -264,7 +264,7 @@ impl GeneratedGraph {
                         let dep_name = &package_names[dep_idx];
                         let constraint = if rng.gen_bool(config.conflict_probability) {
                             // Generate potentially conflicting constraint
-                            format!("<1.0")
+                            "<1.0".to_string()
                         } else {
                             random_constraint()
                         };
@@ -275,11 +275,11 @@ impl GeneratedGraph {
                 deps_for_pkg.insert(version.clone(), version_deps);
             }
 
-            packages[i].dependencies = deps_for_pkg;
+            package.dependencies = deps_for_pkg;
         }
 
         // Generate root dependencies (last few packages)
-        let root_count = (config.package_count / 10).max(1).min(10);
+        let root_count = (config.package_count / 10).clamp(1, 10);
         let root_deps: Vec<(String, String)> = packages
             .iter()
             .rev()
@@ -374,7 +374,7 @@ pub fn random_class_name() -> String {
 
     let prefix = prefixes.choose(&mut rng).unwrap();
     let name = names.choose(&mut rng).unwrap();
-    format!("{}{}", prefix, name)
+    format!("{prefix}{name}")
 }
 
 /// Generate random PHP namespace.
@@ -464,8 +464,7 @@ mod tests {
     #[test]
     fn test_random_semver() {
         let version = random_semver();
-        let parts: Vec<&str> = version.split('.').collect();
-        assert_eq!(parts.len(), 3);
+        assert_eq!(version.split('.').count(), 3);
     }
 
     #[test]

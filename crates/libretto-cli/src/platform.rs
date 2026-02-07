@@ -163,11 +163,11 @@ impl PlatformValidator {
                         error = %err,
                         "direct PHP execution failed, retrying through cmd /C"
                     );
-                    return Command::new("cmd")
+                    Command::new("cmd")
                         .arg("/C")
                         .arg(&self.php_binary)
                         .args(args)
-                        .output();
+                        .output()
                 }
 
                 #[cfg(not(windows))]

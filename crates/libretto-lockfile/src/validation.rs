@@ -674,13 +674,7 @@ impl ManualEditDetector {
 
 /// Check if a package is a platform package.
 fn is_platform_package(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("php-")
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name == "composer"
-        || name == "composer-plugin-api"
-        || name == "composer-runtime-api"
+    libretto_core::is_platform_package_name(name)
 }
 
 /// Check if version format is valid.
@@ -722,10 +716,11 @@ mod tests {
 
     #[test]
     fn test_validator_with_packages() {
-        let mut lock = ComposerLock::default();
-        lock.content_hash = "abc123".to_string();
-        lock.packages
-            .push(LockedPackage::new("vendor/pkg", "1.0.0"));
+        let lock = ComposerLock {
+            content_hash: "abc123".to_string(),
+            packages: vec![LockedPackage::new("vendor/pkg", "1.0.0")],
+            ..Default::default()
+        };
 
         let result = Validator::new().validate(&lock);
         assert!(result.valid);
@@ -733,12 +728,14 @@ mod tests {
 
     #[test]
     fn test_duplicate_detection() {
-        let mut lock = ComposerLock::default();
-        lock.content_hash = "abc123".to_string();
-        lock.packages
-            .push(LockedPackage::new("vendor/pkg", "1.0.0"));
-        lock.packages
-            .push(LockedPackage::new("vendor/pkg", "2.0.0"));
+        let lock = ComposerLock {
+            content_hash: "abc123".to_string(),
+            packages: vec![
+                LockedPackage::new("vendor/pkg", "1.0.0"),
+                LockedPackage::new("vendor/pkg", "2.0.0"),
+            ],
+            ..Default::default()
+        };
 
         let result = Validator::new().validate(&lock);
         assert!(!result.valid);
@@ -752,8 +749,10 @@ mod tests {
 
     #[test]
     fn test_drift_detection() {
-        let mut lock = ComposerLock::default();
-        lock.content_hash = "old_hash".to_string();
+        let lock = ComposerLock {
+            content_hash: "old_hash".to_string(),
+            ..Default::default()
+        };
 
         let mut require = BTreeMap::new();
         require.insert("vendor/pkg".to_string(), "^1.0".to_string());
@@ -773,8 +772,10 @@ mod tests {
 
     #[test]
     fn test_manual_edit_detector() {
-        let mut lock = ComposerLock::default();
-        lock.readme = vec!["Modified readme".to_string()];
+        let lock = ComposerLock {
+            readme: vec!["Modified readme".to_string()],
+            ..Default::default()
+        };
 
         let signs = ManualEditDetector::detect(&lock);
         assert!(!signs.is_empty());

@@ -250,8 +250,8 @@ mod tests {
     fn test_quick_table() {
         let table = quick_table(["A", "B"], vec![vec!["1", "2"], vec!["3", "4"]]);
         let output = table.render();
-        assert!(output.contains("1"));
-        assert!(output.contains("4"));
+        assert!(output.contains('1'));
+        assert!(output.contains('4'));
     }
 
     #[test]

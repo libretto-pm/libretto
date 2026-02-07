@@ -19,7 +19,7 @@ fn bench_hash_algorithms(c: &mut Criterion) {
     let mut group = c.benchmark_group("hash_algorithms");
 
     // Test different file sizes
-    for size in [1024, 10_240, 102_400, 1_024_000].iter() {
+    for size in &[1024, 10_240, 102_400, 1_024_000] {
         group.throughput(Throughput::Bytes(*size as u64));
 
         // SHA-256
@@ -62,7 +62,10 @@ fn bench_constant_time_comparison(c: &mut Criterion) {
     let incorrect = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde8";
 
     c.bench_function("verify_correct_hash", |b| {
-        b.iter(|| black_box(hash.verify(correct).unwrap()));
+        b.iter(|| {
+            hash.verify(correct).unwrap();
+            black_box(())
+        });
     });
 
     c.bench_function("verify_incorrect_hash", |b| {

@@ -128,6 +128,12 @@ impl<F: PackageFetcher> Resolver<F> {
     ///
     /// Takes root dependencies and dev dependencies, returns a complete
     /// resolution with all transitive dependencies in topological order.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ResolveError::Conflict` if dependencies cannot be satisfied,
+    /// `ResolveError::PackageNotFound` if a required package is missing, or
+    /// `ResolveError::Cancelled` on internal solver errors.
     pub async fn resolve(
         &self,
         root_deps: &[Dependency],
@@ -138,9 +144,10 @@ impl<F: PackageFetcher> Resolver<F> {
         // Phase 1: Stream-fetch all reachable packages
         let fetch_start = Instant::now();
         let packages = self.fetch_all_packages(root_deps, dev_deps).await?;
-        self.stats
-            .fetch_time_ms
-            .store(fetch_start.elapsed().as_millis() as u64, Ordering::Relaxed);
+        self.stats.fetch_time_ms.store(
+            u64::try_from(fetch_start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
 
         info!(
             packages = packages.len(),
@@ -153,9 +160,10 @@ impl<F: PackageFetcher> Resolver<F> {
         // Phase 2: Run PubGrub solver
         let solver_start = Instant::now();
         let resolution = self.solve(root_deps, dev_deps, packages)?;
-        self.stats
-            .solver_time_ms
-            .store(solver_start.elapsed().as_millis() as u64, Ordering::Relaxed);
+        self.stats.solver_time_ms.store(
+            u64::try_from(solver_start.elapsed().as_millis()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
 
         info!(
             total_ms = start.elapsed().as_millis(),
@@ -299,6 +307,19 @@ impl<F: PackageFetcher> Resolver<F> {
             root_deps.to_vec()
         };
 
+        // Composer-style per-package stability flags from explicit root constraints
+        // (e.g., dev-master, ^1.0@beta), overriding global minimum-stability.
+        let mut package_min_stability: AHashMap<String, Stability> = AHashMap::new();
+        for dep in &all_deps {
+            let dep_min_stability = dep.constraint.min_stability();
+            if dep_min_stability < self.config.min_stability {
+                package_min_stability
+                    .entry(dep.name.as_str().to_string())
+                    .and_modify(|current| *current = (*current).min(dep_min_stability))
+                    .or_insert(dep_min_stability);
+            }
+        }
+
         let root_dep_ranges: Vec<_> = all_deps
             .iter()
             .filter(|d| !is_platform_package(d.name.as_str()))
@@ -313,6 +334,7 @@ impl<F: PackageFetcher> Resolver<F> {
             packages.clone(),
             self.config.mode,
             self.config.min_stability,
+            package_min_stability.clone(),
             AHashSet::new(),
         );
         provider.set_root_deps(root_dep_ranges.clone());
@@ -348,7 +370,7 @@ impl<F: PackageFetcher> Resolver<F> {
 
         // If nothing is replaced, skip pass 2 — use pass 1 result directly
         if replaced.is_empty() {
-            return self.build_resolution(solution, &provider, dev_deps);
+            return Ok(Self::build_resolution(solution, &provider, dev_deps));
         }
 
         info!(
@@ -361,12 +383,13 @@ impl<F: PackageFetcher> Resolver<F> {
             packages,
             self.config.mode,
             self.config.min_stability,
+            package_min_stability,
             replaced,
         );
         provider2.set_root_deps(root_dep_ranges);
 
         match resolve(&provider2, root, root_ver) {
-            Ok(solution) => self.build_resolution(solution, &provider2, dev_deps),
+            Ok(solution) => Ok(Self::build_resolution(solution, &provider2, dev_deps)),
             Err(PubGrubError::NoSolution(mut tree)) => {
                 tree.collapse_no_versions();
                 Err(ResolveError::Conflict {
@@ -384,11 +407,10 @@ impl<F: PackageFetcher> Resolver<F> {
 
     /// Build resolution result from `PubGrub` solution.
     fn build_resolution(
-        &self,
         solution: impl IntoIterator<Item = (PackageName, ComposerVersion)>,
         provider: &PubGrubProvider,
         dev_deps: &[Dependency],
-    ) -> Result<Resolution, ResolveError> {
+    ) -> Resolution {
         let dev_names: AHashSet<_> = dev_deps
             .iter()
             .map(|d| d.name.as_str().to_string())
@@ -455,26 +477,25 @@ impl<F: PackageFetcher> Resolver<F> {
         }
 
         // Topological sort
-        let packages = self.topological_sort(&graph, &indices, pkg_map, &dev_names, provider)?;
+        let packages = Self::topological_sort(&graph, &indices, pkg_map, &dev_names, provider);
 
-        Ok(Resolution {
+        Resolution {
             packages,
             graph,
             indices,
             platform_packages: vec![],
             duration: Duration::ZERO,
-        })
+        }
     }
 
     /// Sort packages in topological order (dependencies first).
     fn topological_sort(
-        &self,
         graph: &DiGraph<PackageName, ()>,
         indices: &AHashMap<String, NodeIndex>,
         mut pkg_map: AHashMap<String, (PackageName, ComposerVersion)>,
         dev_names: &AHashSet<String>,
         provider: &PubGrubProvider,
-    ) -> Result<Vec<ResolvedPackage>, ResolveError> {
+    ) -> Vec<ResolvedPackage> {
         let mut result = Vec::with_capacity(pkg_map.len());
         let mut in_degree: AHashMap<NodeIndex, usize> = AHashMap::new();
 
@@ -532,7 +553,7 @@ impl<F: PackageFetcher> Resolver<F> {
             }
         }
 
-        Ok(result)
+        result
     }
 }
 
@@ -544,6 +565,7 @@ struct PubGrubProvider {
     packages: AHashMap<String, PackageEntry>,
     mode: ResolutionMode,
     min_stability: Stability,
+    package_min_stability: AHashMap<String, Stability>,
     root_deps: parking_lot::Mutex<DependencyConstraints<PackageName, Ranges<ComposerVersion>>>,
     /// Packages replaced by selected packages (populated between pass 1 and 2).
     /// In pass 1 this is empty; in pass 2 it contains the names of packages
@@ -556,12 +578,14 @@ impl PubGrubProvider {
         packages: AHashMap<String, PackageEntry>,
         mode: ResolutionMode,
         min_stability: Stability,
+        package_min_stability: AHashMap<String, Stability>,
         replaced_packages: AHashSet<String>,
     ) -> Self {
         Self {
             packages,
             mode,
             min_stability,
+            package_min_stability,
             root_deps: parking_lot::Mutex::new(DependencyConstraints::default()),
             replaced_packages,
         }
@@ -597,6 +621,13 @@ impl PubGrubProvider {
             .versions
             .iter()
             .find(|v| &v.version == version)
+    }
+
+    fn package_min_stability(&self, pkg: &PackageName) -> Stability {
+        self.package_min_stability
+            .get(pkg.as_str())
+            .copied()
+            .unwrap_or(self.min_stability)
     }
 }
 
@@ -643,16 +674,17 @@ impl DependencyProvider for PubGrubProvider {
             return Ok(None);
         }
 
-        let entry = match self.packages.get(pkg.as_str()) {
-            Some(e) => e,
-            None => return Ok(None),
+        let Some(entry) = self.packages.get(pkg.as_str()) else {
+            return Ok(None);
         };
+
+        let min_stability = self.package_min_stability(pkg);
 
         // Filter by range and stability
         let matching: Vec<_> = entry
             .versions
             .iter()
-            .filter(|v| range.contains(&v.version) && v.version.stability >= self.min_stability)
+            .filter(|v| range.contains(&v.version) && v.version.stability >= min_stability)
             .collect();
 
         let best = match self.mode {
@@ -685,14 +717,12 @@ impl DependencyProvider for PubGrubProvider {
             return Ok(Dependencies::Available(DependencyConstraints::default()));
         }
 
-        let entry = match self.packages.get(pkg.as_str()) {
-            Some(e) => e,
-            None => return Ok(Dependencies::Available(DependencyConstraints::default())),
+        let Some(entry) = self.packages.get(pkg.as_str()) else {
+            return Ok(Dependencies::Available(DependencyConstraints::default()));
         };
 
-        let version = match entry.versions.iter().find(|v| &v.version == ver) {
-            Some(v) => v,
-            None => return Ok(Dependencies::Available(DependencyConstraints::default())),
+        let Some(version) = entry.versions.iter().find(|v| &v.version == ver) else {
+            return Ok(Dependencies::Available(DependencyConstraints::default()));
         };
 
         let mut deps = DependencyConstraints::default();
@@ -716,13 +746,7 @@ impl DependencyProvider for PubGrubProvider {
 /// Check if a package name is a platform package (php, ext-*, lib-*).
 #[inline]
 fn is_platform_package(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("php-")
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name == "composer"
-        || name == "composer-plugin-api"
-        || name == "composer-runtime-api"
+    libretto_core::is_platform_package_name(name)
 }
 
 /// Parse a constraint string from replace/provide declarations.
@@ -752,7 +776,9 @@ fn convert_fetched_package(
     let mut entry = PackageEntry::new(name.clone());
 
     for v in &pkg.versions {
-        let version = ComposerVersion::parse(&v.version)?;
+        let Some(version) = ComposerVersion::parse(&v.version) else {
+            continue;
+        };
         let mut pv = PackageVersion::new(name.clone(), version);
 
         // Dependencies
@@ -797,17 +823,17 @@ fn convert_fetched_package(
         pv.package_type = v.package_type.as_ref().map(|s| Arc::from(s.as_str()));
         pv.description = v.description.as_ref().map(|s| Arc::from(s.as_str()));
         pv.homepage = v.homepage.as_ref().map(|s| Arc::from(s.as_str()));
-        pv.license = v.license.clone();
-        pv.authors = v.authors.clone();
-        pv.keywords = v.keywords.clone();
+        pv.license.clone_from(&v.license);
+        pv.authors.clone_from(&v.authors);
+        pv.keywords.clone_from(&v.keywords);
         pv.time = v.time.as_ref().map(|s| Arc::from(s.as_str()));
-        pv.autoload = v.autoload.clone();
-        pv.autoload_dev = v.autoload_dev.clone();
-        pv.extra = v.extra.clone();
-        pv.support = v.support.clone();
-        pv.funding = v.funding.clone();
+        pv.autoload.clone_from(&v.autoload);
+        pv.autoload_dev.clone_from(&v.autoload_dev);
+        pv.extra.clone_from(&v.extra);
+        pv.support.clone_from(&v.support);
+        pv.funding.clone_from(&v.funding);
         pv.notification_url = v.notification_url.as_ref().map(|s| Arc::from(s.as_str()));
-        pv.bin = v.bin.clone();
+        pv.bin.clone_from(&v.bin);
 
         entry.add_version(pv);
     }
@@ -945,3 +971,133 @@ pub type TurboResolver<F> = Resolver<F>;
 
 /// Backward-compatible alias for `ResolverStats`.
 pub type TurboStats = ResolverStats;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fetcher::{FetchedPackage, FetchedVersion, PackageFetcher};
+    use std::future::Future;
+    use std::pin::Pin;
+
+    #[derive(Debug, Clone)]
+    struct StaticFetcher {
+        packages: AHashMap<String, FetchedPackage>,
+    }
+
+    impl StaticFetcher {
+        fn new(packages: Vec<FetchedPackage>) -> Self {
+            Self {
+                packages: packages
+                    .into_iter()
+                    .map(|pkg| (pkg.name.clone(), pkg))
+                    .collect(),
+            }
+        }
+    }
+
+    impl PackageFetcher for StaticFetcher {
+        fn fetch(
+            &self,
+            name: String,
+        ) -> Pin<Box<dyn Future<Output = Option<FetchedPackage>> + Send + '_>> {
+            Box::pin(async move { self.packages.get(&name).cloned() })
+        }
+    }
+
+    fn fetched_version(version: &str, require: Vec<(&str, &str)>) -> FetchedVersion {
+        FetchedVersion {
+            version: version.to_string(),
+            require: require
+                .into_iter()
+                .map(|(name, constraint)| (name.to_string(), constraint.to_string()))
+                .collect(),
+            require_dev: Vec::new(),
+            replace: Vec::new(),
+            provide: Vec::new(),
+            suggest: Vec::new(),
+            dist_url: None,
+            dist_type: None,
+            dist_shasum: None,
+            source_url: None,
+            source_type: None,
+            source_reference: None,
+            package_type: None,
+            description: None,
+            homepage: None,
+            license: None,
+            authors: None,
+            keywords: None,
+            time: None,
+            autoload: None,
+            autoload_dev: None,
+            extra: None,
+            support: None,
+            funding: None,
+            notification_url: None,
+            bin: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_dev_constraint_overrides_global_minimum_stability() {
+        let fetcher = StaticFetcher::new(vec![FetchedPackage {
+            name: "vendor/dev-only".to_string(),
+            versions: vec![fetched_version("dev-master", vec![])],
+        }]);
+
+        let resolver = Resolver::new(
+            Arc::new(fetcher),
+            ResolverConfig {
+                min_stability: Stability::Stable,
+                include_dev: false,
+                ..Default::default()
+            },
+        );
+
+        let root_deps = vec![Dependency::new(
+            PackageName::parse("vendor/dev-only").expect("valid package name"),
+            ComposerConstraint::parse("dev-master").expect("valid constraint"),
+        )];
+
+        let resolution = resolver
+            .resolve(&root_deps, &[])
+            .await
+            .expect("dev constraint should be allowed for explicitly required package");
+
+        let pkg = resolution
+            .get("vendor/dev-only")
+            .expect("package should be resolved");
+        assert_eq!(pkg.version.to_string(), "dev-master");
+    }
+
+    #[tokio::test]
+    async fn wildcard_constraint_keeps_global_stability_floor() {
+        let fetcher = StaticFetcher::new(vec![FetchedPackage {
+            name: "vendor/dev-only".to_string(),
+            versions: vec![fetched_version("dev-master", vec![])],
+        }]);
+
+        let resolver = Resolver::new(
+            Arc::new(fetcher),
+            ResolverConfig {
+                min_stability: Stability::Stable,
+                include_dev: false,
+                ..Default::default()
+            },
+        );
+
+        let root_deps = vec![Dependency::new(
+            PackageName::parse("vendor/dev-only").expect("valid package name"),
+            ComposerConstraint::parse("*").expect("valid constraint"),
+        )];
+
+        let err = resolver
+            .resolve(&root_deps, &[])
+            .await
+            .expect_err("wildcard should not allow dev-only package under stable minimum");
+        assert!(
+            matches!(err, ResolveError::Conflict { .. }),
+            "expected conflict, got: {err:?}"
+        );
+    }
+}

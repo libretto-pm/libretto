@@ -193,7 +193,7 @@ pub async fn run(args: RunScriptArgs) -> Result<()> {
                         std::thread::sleep(Duration::from_millis(100));
                     }
                     Err(e) => {
-                        bail!("Failed to wait for process: {}", e);
+                        bail!("Failed to wait for process: {e}");
                     }
                 }
             };

@@ -129,7 +129,7 @@ async fn set_windows_permissions(path: &Path, mode: PermissionMode) -> Result<()
     cmd.arg(&path_arg)
         .arg("/inheritance:r")
         .arg("/grant:r")
-        .arg(format!("*{}:(F)", owner_sid))
+        .arg(format!("*{owner_sid}:(F)"))
         .arg("/grant")
         .arg("*S-1-5-18:(F)") // NT AUTHORITY\SYSTEM
         .arg("/grant")
@@ -263,7 +263,7 @@ async fn current_user_sid() -> Result<String> {
 
 #[cfg(windows)]
 async fn windows_acl(path: &Path) -> Result<WindowsAclInfo> {
-    let script = r#"
+    let script = r"
 $target = $env:LIBRETTO_AUDIT_PATH
 $acl = Get-Acl -LiteralPath $target
 $ownerSid = $null
@@ -284,7 +284,7 @@ $rules = foreach ($r in $acl.Access) {
   ownerSid = $ownerSid
   rules = @($rules)
 } | ConvertTo-Json -Compress -Depth 6
-"#;
+";
 
     let output = Command::new("powershell")
         .arg("-NoProfile")

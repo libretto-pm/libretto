@@ -75,16 +75,14 @@ impl TempGitRepo {
             }
         });
 
-        let files = vec![
-            (
+        let files = [(
                 "composer.json",
                 serde_json::to_string_pretty(&composer_json)?,
             ),
             (
                 "src/Example.php",
                 "<?php\nnamespace Vendor\\Package;\nclass Example {}".to_string(),
-            ),
-        ];
+            )];
 
         let file_refs: Vec<(&str, &str)> = files.iter().map(|(p, c)| (*p, c.as_str())).collect();
 

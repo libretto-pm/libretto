@@ -168,6 +168,7 @@ impl Hook {
 
     /// Parse hook from string.
     #[must_use]
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pre-install-cmd" => Some(Self::PreInstallCmd),

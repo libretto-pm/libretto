@@ -53,6 +53,7 @@ impl CacheStats {
 
     /// Get the cache hit rate.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn hit_rate(&self) -> f64 {
         let hits = self.hits.load(Ordering::Relaxed);
         let misses = self.misses.load(Ordering::Relaxed);
@@ -66,6 +67,7 @@ impl CacheStats {
 
     /// Get the constraint cache hit rate.
     #[must_use]
+    #[allow(clippy::cast_precision_loss)]
     pub fn constraint_hit_rate(&self) -> f64 {
         let hits = self.constraint_cache_hits.load(Ordering::Relaxed);
         let misses = self.constraint_cache_misses.load(Ordering::Relaxed);
@@ -177,6 +179,10 @@ pub trait PackageSource: Send + Sync {
     }
 }
 
+/// Map from a virtual/replacement package name to the packages that provide/replace it.
+type ProviderMap =
+    DashMap<Arc<str>, SmallVec<[(PackageName, ComposerVersion); 4]>, ahash::RandomState>;
+
 /// The package index providing cached access to package metadata.
 pub struct PackageIndex<S: PackageSource> {
     /// The underlying package source.
@@ -186,11 +192,9 @@ pub struct PackageIndex<S: PackageSource> {
     /// Constraint evaluation cache.
     constraint_cache: DashMap<ConstraintCacheKey, ConstraintCacheEntry, ahash::RandomState>,
     /// Virtual packages (packages provided by others).
-    virtual_packages:
-        DashMap<Arc<str>, SmallVec<[(PackageName, ComposerVersion); 4]>, ahash::RandomState>,
+    virtual_packages: ProviderMap,
     /// Package replacements.
-    replacements:
-        DashMap<Arc<str>, SmallVec<[(PackageName, ComposerVersion); 4]>, ahash::RandomState>,
+    replacements: ProviderMap,
     /// Configuration.
     config: IndexConfig,
     /// Cache statistics.
@@ -206,7 +210,7 @@ impl<S: PackageSource> std::fmt::Debug for PackageIndex<S> {
             .field("replacements", &self.replacements.len())
             .field("config", &self.config)
             .field("stats", &self.stats)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -321,9 +325,8 @@ impl<S: PackageSource> PackageIndex<S> {
         self.stats.record_constraint_miss();
 
         // Get package and filter
-        let entry = match self.get(name) {
-            Some(e) => e,
-            None => return Vec::new(),
+        let Some(entry) = self.get(name) else {
+            return Vec::new();
         };
 
         // Find matching versions and their indices
@@ -611,6 +614,11 @@ impl MemorySource {
     }
 
     /// Add a simple package version.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `name` is not a valid package name or `version` is not a valid
+    /// semantic version string.
     pub fn add_version(&self, name: &str, version: &str, deps: Vec<(&str, &str)>) {
         let pkg_name = PackageName::parse(name).expect("valid package name");
         let pkg_version = ComposerVersion::parse(version).expect("valid version");

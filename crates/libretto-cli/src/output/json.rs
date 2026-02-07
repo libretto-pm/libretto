@@ -63,7 +63,7 @@ pub struct ErrorContext {
 
 /// JSON-serializable result structure.
 #[derive(Debug, Serialize)]
-pub struct JsonResult<T: Serialize> {
+pub struct JsonResult<T> {
     /// Whether the operation succeeded
     pub success: bool,
     /// The result data (if success)

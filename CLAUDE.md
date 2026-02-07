@@ -1,4 +1,4 @@
-# CLAUDE.md - Libretto Project Guide
+# CODEX.md - Libretto Project Guide
 
 ## Project Overview
 
@@ -110,7 +110,7 @@ The main binary is `libretto` (defined in `libretto-cli`):
 
 ### Rust Conventions
 
-- **Edition**: 2021
+- **Edition**: 2024
 - **Unsafe code**: Denied (`#![deny(unsafe_code)]` in most crates)
 - **Lints**: Strict clippy configuration (pedantic, nursery, cargo warnings)
 - **Unwrap**: `clippy::unwrap_used = "warn"` - prefer `?` or explicit error handling

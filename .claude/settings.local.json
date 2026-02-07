@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__acp__Bash",
+      "mcp__acp__Write",
+      "mcp__acp__Edit",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:fossies.org)",
+      "WebFetch(domain:getcomposer.org)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:lib.rs)",
+      "WebFetch(domain:docs.rs)",
+      "WebFetch(domain:crates.io)",
+      "WebFetch(domain:mago.carthage.software)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:astral.sh)",
+      "WebFetch(domain:extism.org)"
+    ]
+  }
+}

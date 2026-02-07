@@ -504,7 +504,7 @@ impl ScriptExecutor {
     }
 
     /// Clear Laravel's compiled cache files directly.
-    /// This is what Laravel's ComposerScripts::clearCompiled() does.
+    /// This is what Laravel's `ComposerScripts::clearCompiled()` does.
     fn laravel_clear_compiled(&self) -> Result<Option<ExitStatus>> {
         let bootstrap_cache = self.config.working_dir.join("bootstrap").join("cache");
 
@@ -553,7 +553,7 @@ impl ScriptExecutor {
 
         // Generate the PHP script that provides full Composer compatibility
         let php_code = format!(
-            r#"<?php
+            r"<?php
 /**
  * Libretto Script Runner
  * Provides full Composer Event API compatibility
@@ -629,7 +629,7 @@ try {{
     // PHP 8+ throws ArgumentCountError for wrong argument count
     call_user_func($callback);
 }}
-"#,
+",
             vendor_dir = vendor_dir,
             working_dir = working_dir,
             dev_mode = dev_mode,
@@ -736,7 +736,7 @@ try {{
                         std::thread::sleep(Duration::from_millis(100));
                     }
                     Err(e) => {
-                        return Err(anyhow::anyhow!("Failed to wait for process: {}", e));
+                        return Err(anyhow::anyhow!("Failed to wait for process: {e}"));
                     }
                 }
             }
@@ -910,7 +910,7 @@ pub fn run_pre_operations_scripts(
 /// Run package-level scripts for a specific package.
 ///
 /// These are events like pre-package-install, post-package-install, etc.
-/// They receive a PackageEvent instead of a regular Event.
+/// They receive a `PackageEvent` instead of a regular Event.
 #[allow(dead_code)]
 pub fn run_package_scripts(
     composer_json: &Value,

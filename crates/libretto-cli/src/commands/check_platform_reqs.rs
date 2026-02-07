@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::Args;
+use libretto_core::is_platform_package_name;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::collections::HashMap;
 use std::process::Command;
@@ -69,7 +70,7 @@ pub async fn run(args: CheckPlatformReqsArgs) -> Result<()> {
         // Get requirements from require section
         if let Some(require) = composer.get("require").and_then(|v| v.as_object()) {
             for (name, version) in require {
-                if (name.starts_with("php") || name.starts_with("ext-") || name.starts_with("lib-"))
+                if is_platform_package_name(name)
                     && let Some(v) = version.as_str()
                 {
                     requirements.insert(name.to_string(), v.to_string());

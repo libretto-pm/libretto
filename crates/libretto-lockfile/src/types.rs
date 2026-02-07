@@ -620,7 +620,7 @@ mod tests {
 
     #[test]
     fn test_locked_package_ordering() {
-        let mut packages = vec![
+        let mut packages = [
             LockedPackage::new("symfony/console", "6.0.0"),
             LockedPackage::new("psr/log", "3.0.0"),
             LockedPackage::new("Monolog/monolog", "3.0.0"),

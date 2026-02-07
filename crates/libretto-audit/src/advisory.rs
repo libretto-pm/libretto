@@ -92,7 +92,7 @@ impl VersionConstraint {
         Some(Self { constraint })
     }
 
-    /// Check if a semver::Version matches this constraint.
+    /// Check if a `semver::Version` matches this constraint.
     fn matches_semver(&self, version: &Version) -> bool {
         // Convert semver::Version to ComposerVersion for matching
         let composer_ver = ComposerVersion::new(version.major, version.minor, version.patch);

@@ -66,8 +66,7 @@ impl Stability {
             "alpha" | "a" => Some(Self::Alpha),
             "beta" | "b" => Some(Self::Beta),
             "rc" | "rc1" | "rc2" | "rc3" | "rc4" | "rc5" => Some(Self::RC),
-            "stable" | "" => Some(Self::Stable),
-            "patch" | "pl" | "p" => Some(Self::Stable), // Composer treats these as stable
+            "stable" | "" | "patch" | "pl" | "p" => Some(Self::Stable), // Composer treats patch/pl/p as stable
             _ => None,
         }
     }
@@ -255,24 +254,6 @@ impl ComposerVersion {
     }
 
     fn parse_uncached(input: &str) -> Option<Self> {
-        // Handle dev-* branches
-        if let Some(branch) = input.strip_prefix("dev-") {
-            return Some(Self::dev_branch(branch));
-        }
-
-        // Handle *-dev suffix (e.g., 1.0.x-dev, master-dev)
-        let (version_part, is_dev_suffix) = if let Some(prefix) = input.strip_suffix("-dev") {
-            (prefix, true)
-        } else {
-            (input, false)
-        };
-
-        // Remove 'v' or 'V' prefix
-        let version_part = version_part
-            .strip_prefix('v')
-            .or_else(|| version_part.strip_prefix('V'))
-            .unwrap_or(version_part);
-
         // Regex for parsing version strings
         static VERSION_REGEX: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
             Regex::new(
@@ -295,9 +276,25 @@ impl ComposerVersion {
             .expect("valid regex")
         });
 
-        let caps = if let Some(c) = VERSION_REGEX.captures(version_part) {
-            c
+        // Handle dev-* branches
+        if let Some(branch) = input.strip_prefix("dev-") {
+            return Some(Self::dev_branch(branch));
+        }
+
+        // Handle *-dev suffix (e.g., 1.0.x-dev, master-dev)
+        let (version_part, is_dev_suffix) = if let Some(prefix) = input.strip_suffix("-dev") {
+            (prefix, true)
         } else {
+            (input, false)
+        };
+
+        // Remove 'v' or 'V' prefix
+        let version_part = version_part
+            .strip_prefix('v')
+            .or_else(|| version_part.strip_prefix('V'))
+            .unwrap_or(version_part);
+
+        let Some(caps) = VERSION_REGEX.captures(version_part) else {
             if is_dev_suffix {
                 // Fallback: treat as dev branch (e.g. master-dev -> dev-master)
                 return Some(Self::dev_branch(version_part));
@@ -425,7 +422,7 @@ impl fmt::Debug for ComposerVersion {
             .field("patch", &self.patch)
             .field("stability", &self.stability)
             .field("is_dev_branch", &self.is_dev_branch)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -781,24 +778,8 @@ impl ComposerConstraint {
             .collect()
     }
 
-    fn parse_single(input: &str) -> Option<Self> {
-        let input = input.trim();
-
-        // Wildcard
-        if input == "*" {
-            return Some(Self::any());
-        }
-
-        // Dev branch
-        if let Some(branch) = input.strip_prefix("dev-") {
-            let mut constraint = Self::any();
-            constraint.original = Arc::from(input);
-            constraint.min_stability = Stability::Dev;
-            constraint.dev_branches.push(Arc::from(branch));
-            return Some(constraint);
-        }
-
-        // Operators
+    /// Parse a comparison operator constraint (>=, <=, >, <, !=, =).
+    fn parse_comparison_operator(input: &str) -> Option<Self> {
         if let Some(rest) = input.strip_prefix(">=") {
             let version = ComposerVersion::parse(rest.trim())?;
             return Some(Self {
@@ -854,6 +835,33 @@ impl ComposerConstraint {
             return Some(Self::exact(version));
         }
 
+        None
+    }
+
+    fn parse_single(input: &str) -> Option<Self> {
+        let input = input.trim();
+
+        // Wildcard
+        if input == "*" {
+            return Some(Self::any());
+        }
+
+        // Dev branch
+        if let Some(branch) = input.strip_prefix("dev-") {
+            let mut constraint = Self::any();
+            constraint.original = Arc::from(input);
+            constraint.min_stability = Stability::Dev;
+            constraint.dev_branches.push(Arc::from(branch));
+            return Some(constraint);
+        }
+
+        // Comparison operators (>=, <=, >, <, !=, =)
+        if input.starts_with(['>', '<', '!', '='])
+            && let Some(result) = Self::parse_comparison_operator(input)
+        {
+            return Some(result);
+        }
+
         // Caret: ^1.2.3 means >=1.2.3 <2.0.0 (or <1.3.0 if major is 0)
         if let Some(rest) = input.strip_prefix('^') {
             let version = ComposerVersion::parse(rest.trim())?;
@@ -890,7 +898,12 @@ impl ComposerConstraint {
         }
 
         // Wildcard patterns: 1.0.*, 1.*
-        if input.ends_with(".*") || input.ends_with(".x") {
+        if input.ends_with(".*")
+            || input
+                .as_bytes()
+                .last_chunk::<2>()
+                .is_some_and(|c| c[0] == b'.' && c[1].eq_ignore_ascii_case(&b'x'))
+        {
             let prefix = &input[..input.len() - 2];
             let parts: Vec<&str> = prefix.split('.').collect();
 
@@ -1047,7 +1060,7 @@ impl fmt::Debug for ComposerConstraint {
         f.debug_struct("ComposerConstraint")
             .field("original", &self.original)
             .field("min_stability", &self.min_stability)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 

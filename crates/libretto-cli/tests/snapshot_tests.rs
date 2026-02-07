@@ -52,9 +52,7 @@ fn normalize_output(output: &str) -> String {
         .replace_all(&output, "/path/to/libretto");
 
     // Normalize binary name: libretto.exe -> libretto (Windows compatibility)
-    let output = regex::Regex::new(r"libretto\.exe")
-        .unwrap()
-        .replace_all(&output, "libretto");
+    let output = output.replace("libretto.exe", "libretto");
 
     // Normalize bullet points: * -> • (Windows uses * instead of •)
     // Only replace * at the start of a line with optional leading whitespace
@@ -65,7 +63,7 @@ fn normalize_output(output: &str) -> String {
     // Normalize error prefix: [ERR] -> ✘ (Windows compatibility)
     let output = output.replace("[ERR]", "✘");
 
-    output.to_string()
+    output.clone()
 }
 
 // ========== Help Output Snapshots ==========

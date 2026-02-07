@@ -105,11 +105,45 @@ impl ExcludePattern {
         Self { patterns: regexes }
     }
 
+    /// Check if path string should be excluded.
+    #[must_use]
+    pub fn should_exclude_str(&self, path: &str) -> bool {
+        if self.patterns.is_empty() {
+            return false;
+        }
+        self.patterns.iter().any(|p| p.is_match(path))
+    }
+
     /// Check if path should be excluded.
     #[must_use]
     pub fn should_exclude(&self, path: &Path) -> bool {
-        let path_str = path.to_string_lossy();
-        self.patterns.iter().any(|p| p.is_match(&path_str))
+        let path_str = path.to_string_lossy().replace('\\', "/");
+        self.should_exclude_str(&path_str)
+    }
+
+    /// Check if path should be excluded relative to a base directory.
+    #[must_use]
+    pub fn should_exclude_relative(&self, path: &Path, base: &Path) -> bool {
+        if self.patterns.is_empty() {
+            return false;
+        }
+        let relative = path.strip_prefix(base).unwrap_or(path);
+        let mut path_str = relative.to_string_lossy().replace('\\', "/");
+        if !path_str.starts_with('/') {
+            path_str.insert(0, '/');
+        }
+        self.should_exclude_str(&path_str)
+    }
+
+    /// Returns true if there are no patterns.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// Extend with patterns from another exclude set.
+    pub fn extend_from(&mut self, other: &Self) {
+        self.patterns.extend(other.patterns.iter().cloned());
     }
 
     /// Empty exclude pattern (excludes nothing).
@@ -365,6 +399,15 @@ mod tests {
         assert!(pattern.should_exclude(Path::new("UserTest.php")));
         assert!(pattern.should_exclude(Path::new("tests/bootstrap.php")));
         assert!(!pattern.should_exclude(Path::new("User.php")));
+    }
+
+    #[test]
+    fn exclude_pattern_relative_leading_slash() {
+        let pattern = ExcludePattern::from_patterns(&["/Tests/".to_string()]);
+
+        assert!(
+            pattern.should_exclude_relative(Path::new("/pkg/Tests/Foo.php"), Path::new("/pkg"))
+        );
     }
 
     #[test]

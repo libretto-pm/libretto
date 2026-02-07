@@ -1,11 +1,13 @@
 //! Ultra-fast PHP class/interface/trait/enum scanner.
 //!
-//! Ported from PHP's zend_strip() + Composer's PhpFileParser.
+//! Ported from PHP's `zend_strip()` + Composer's `PhpFileParser`.
 //! Single-pass state machine that's as fast as PHP's C implementation.
 
+use crate::scanner::ExcludePattern;
 use memchr::memmem;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
+use walkdir::{DirEntry, WalkDir};
 
 /// Result of scanning a single file
 #[derive(Debug, Clone)]
@@ -21,18 +23,17 @@ pub struct FastScanner;
 impl FastScanner {
     /// Scan a directory for PHP classes in parallel
     pub fn scan_directory(root: &Path) -> Vec<FastScanResult> {
-        let php_files: Vec<PathBuf> = walkdir::WalkDir::new(root)
-            .follow_links(true)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.file_type().is_file()
-                    && e.path()
-                        .extension()
-                        .map_or(false, |ext| ext.eq_ignore_ascii_case("php"))
-            })
-            .map(|e| e.into_path())
-            .collect();
+        let exclude = ExcludePattern::empty();
+        Self::scan_directory_with_exclude(root, root, &exclude)
+    }
+
+    /// Scan a directory for PHP classes in parallel with exclude patterns.
+    pub fn scan_directory_with_exclude(
+        root: &Path,
+        base: &Path,
+        exclude: &ExcludePattern,
+    ) -> Vec<FastScanResult> {
+        let php_files: Vec<PathBuf> = collect_php_files(root, base, exclude);
 
         php_files
             .into_par_iter()
@@ -220,79 +221,91 @@ impl FastScanner {
             }
 
             // Check for keywords - only if preceded by valid boundary
-            if i == 0 || is_boundary_char(content[i - 1]) {
+            if is_keyword_boundary(content, i) {
                 // namespace
-                if b == b'n' && i + 9 <= len && &content[i..i + 9] == b"namespace" {
-                    if i + 9 >= len || content[i + 9].is_ascii_whitespace() {
-                        i += 9;
-                        while i < len && content[i].is_ascii_whitespace() {
-                            i += 1;
-                        }
-                        let ns_start = i;
-                        while i < len {
-                            let c = content[i];
-                            if c.is_ascii_alphanumeric() || c == b'_' || c == b'\\' {
-                                i += 1;
-                            } else if c.is_ascii_whitespace() {
-                                i += 1;
-                            } else {
-                                break;
-                            }
-                        }
-                        namespace = content[ns_start..i]
-                            .iter()
-                            .filter(|&&c| !c.is_ascii_whitespace())
-                            .map(|&c| c as char)
-                            .collect();
-                        if !namespace.is_empty() && !namespace.ends_with('\\') {
-                            namespace.push('\\');
-                        }
-                        continue;
+                if b == b'n'
+                    && i + 9 <= len
+                    && &content[i..i + 9] == b"namespace"
+                    && (i + 9 >= len || content[i + 9].is_ascii_whitespace())
+                {
+                    i += 9;
+                    while i < len && content[i].is_ascii_whitespace() {
+                        i += 1;
                     }
+                    let ns_start = i;
+                    while i < len {
+                        let c = content[i];
+                        if c.is_ascii_alphanumeric()
+                            || c == b'_'
+                            || c == b'\\'
+                            || c.is_ascii_whitespace()
+                        {
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    namespace = content[ns_start..i]
+                        .iter()
+                        .filter(|&&c| !c.is_ascii_whitespace())
+                        .map(|&c| c as char)
+                        .collect();
+                    if !namespace.is_empty() && !namespace.ends_with('\\') {
+                        namespace.push('\\');
+                    }
+                    continue;
                 }
 
                 // class
-                if b == b'c' && i + 5 <= len && &content[i..i + 5] == b"class" {
-                    if i + 5 >= len || content[i + 5].is_ascii_whitespace() {
-                        i += 5;
-                        if let Some(name) = read_name(content, &mut i) {
-                            classes.push(format!("{}{}", namespace, name));
-                        }
-                        continue;
+                if b == b'c'
+                    && i + 5 <= len
+                    && &content[i..i + 5] == b"class"
+                    && (i + 5 >= len || content[i + 5].is_ascii_whitespace())
+                {
+                    i += 5;
+                    if let Some(name) = read_name(content, &mut i) {
+                        classes.push(format!("{namespace}{name}"));
                     }
+                    continue;
                 }
 
                 // interface
-                if b == b'i' && i + 9 <= len && &content[i..i + 9] == b"interface" {
-                    if i + 9 >= len || content[i + 9].is_ascii_whitespace() {
-                        i += 9;
-                        if let Some(name) = read_name(content, &mut i) {
-                            classes.push(format!("{}{}", namespace, name));
-                        }
-                        continue;
+                if b == b'i'
+                    && i + 9 <= len
+                    && &content[i..i + 9] == b"interface"
+                    && (i + 9 >= len || content[i + 9].is_ascii_whitespace())
+                {
+                    i += 9;
+                    if let Some(name) = read_name(content, &mut i) {
+                        classes.push(format!("{namespace}{name}"));
                     }
+                    continue;
                 }
 
                 // trait
-                if b == b't' && i + 5 <= len && &content[i..i + 5] == b"trait" {
-                    if i + 5 >= len || content[i + 5].is_ascii_whitespace() {
-                        i += 5;
-                        if let Some(name) = read_name(content, &mut i) {
-                            classes.push(format!("{}{}", namespace, name));
-                        }
-                        continue;
+                if b == b't'
+                    && i + 5 <= len
+                    && &content[i..i + 5] == b"trait"
+                    && (i + 5 >= len || content[i + 5].is_ascii_whitespace())
+                {
+                    i += 5;
+                    if let Some(name) = read_name(content, &mut i) {
+                        classes.push(format!("{namespace}{name}"));
                     }
+                    continue;
                 }
 
                 // enum
-                if b == b'e' && i + 4 <= len && &content[i..i + 4] == b"enum" {
-                    if i + 4 >= len || content[i + 4].is_ascii_whitespace() {
-                        i += 4;
-                        if let Some(name) = read_name(content, &mut i) {
-                            classes.push(format!("{}{}", namespace, name));
-                        }
-                        continue;
+                if b == b'e'
+                    && i + 4 <= len
+                    && &content[i..i + 4] == b"enum"
+                    && (i + 4 >= len || content[i + 4].is_ascii_whitespace())
+                {
+                    i += 4;
+                    if let Some(name) = read_name(content, &mut i) {
+                        classes.push(format!("{namespace}{name}"));
                     }
+                    continue;
                 }
             }
 
@@ -301,6 +314,57 @@ impl FastScanner {
 
         classes
     }
+}
+
+fn collect_php_files(root: &Path, base: &Path, exclude: &ExcludePattern) -> Vec<PathBuf> {
+    if !root.exists() {
+        return Vec::new();
+    }
+
+    WalkDir::new(root)
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|e| !should_skip_entry(e, base, exclude))
+        .filter_map(std::result::Result::ok)
+        .filter(is_php_file)
+        .map(|e| e.path().to_path_buf())
+        .collect()
+}
+
+fn should_skip_entry(entry: &DirEntry, base: &Path, exclude: &ExcludePattern) -> bool {
+    let path = entry.path();
+
+    // Skip hidden directories
+    if let Some(name) = path.file_name() {
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('.') {
+            return true;
+        }
+        // Skip common non-PHP directories
+        if entry.file_type().is_dir() {
+            let skip_dirs = ["node_modules", "vendor", ".git", "__pycache__", "target"];
+            if skip_dirs.contains(&name_str.as_ref()) {
+                return true;
+            }
+        }
+    }
+
+    if exclude.is_empty() {
+        return false;
+    }
+
+    exclude.should_exclude_relative(path, base)
+}
+
+fn is_php_file(entry: &DirEntry) -> bool {
+    if !entry.file_type().is_file() {
+        return false;
+    }
+
+    entry
+        .path()
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("php"))
 }
 
 /// SIMD-accelerated check for class-like keywords
@@ -316,6 +380,32 @@ fn has_class_keyword(content: &[u8]) -> bool {
 #[inline]
 fn is_boundary_char(c: u8) -> bool {
     !c.is_ascii_alphanumeric() && c != b'_' && c != b':' && c != b'$'
+}
+
+/// Check whether a keyword can start at this offset.
+///
+/// We need a stricter check than a plain boundary to avoid treating
+/// property accesses like `$node->class instanceof ...` as class declarations.
+#[inline]
+fn is_keyword_boundary(content: &[u8], i: usize) -> bool {
+    if i == 0 {
+        return true;
+    }
+
+    let prev = content[i - 1];
+    if !is_boundary_char(prev) {
+        return false;
+    }
+
+    // Reject object/nullsafe property access: ->class, ?->class
+    if prev == b'>' && i >= 2 {
+        let prev2 = content[i - 2];
+        if prev2 == b'-' || prev2 == b'?' {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Read class/interface/trait/enum name
@@ -374,14 +464,14 @@ mod tests {
 
     #[test]
     fn test_multiple_classes() {
-        let content = br#"<?php
+        let content = br"<?php
 namespace App;
 
 class Foo {}
 interface Bar {}
 trait Baz {}
 enum Status {}
-"#;
+";
         let classes = FastScanner::find_classes(content);
         assert_eq!(
             classes,
@@ -391,11 +481,11 @@ enum Status {}
 
     #[test]
     fn test_class_in_comment_ignored() {
-        let content = br#"<?php
+        let content = br"<?php
 // class Fake {}
 /* class AlsoFake {} */
 class Real {}
-"#;
+";
         let classes = FastScanner::find_classes(content);
         assert_eq!(classes, vec!["Real"]);
     }
@@ -434,23 +524,57 @@ class Real {}
 
     #[test]
     fn test_attribute() {
-        let content = br#"<?php
+        let content = br"<?php
 #[Attribute]
 class MyAttribute {}
-"#;
+";
         let classes = FastScanner::find_classes(content);
         assert_eq!(classes, vec!["MyAttribute"]);
     }
 
     #[test]
     fn test_heredoc() {
-        let content = br#"<?php
+        let content = br"<?php
 $x = <<<EOT
 class Fake {}
 EOT;
 class Real {}
-"#;
+";
         let classes = FastScanner::find_classes(content);
         assert_eq!(classes, vec!["Real"]);
+    }
+
+    #[test]
+    fn test_property_class_instanceof_ignored() {
+        let content = br"<?php
+namespace Foo;
+if ($node->class instanceof Name) {
+}
+";
+        let classes = FastScanner::find_classes(content);
+        assert!(classes.is_empty());
+    }
+
+    #[test]
+    fn test_nullsafe_property_class_instanceof_ignored() {
+        let content = br"<?php
+namespace Foo;
+if ($node?->class instanceof Name) {
+}
+";
+        let classes = FastScanner::find_classes(content);
+        assert!(classes.is_empty());
+    }
+
+    #[test]
+    fn test_real_class_not_affected_by_property_access() {
+        let content = br"<?php
+namespace Foo;
+class Real {}
+if ($node->class instanceof Name) {
+}
+";
+        let classes = FastScanner::find_classes(content);
+        assert_eq!(classes, vec!["Foo\\Real"]);
     }
 }

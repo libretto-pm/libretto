@@ -245,11 +245,10 @@ mod tests {
         #[test]
         fn prop_roundtrip_any_string(name in ".*", value in i32::MIN..i32::MAX) {
             let data = Test { name, value };
-            if let Ok(json) = to_json(&data) {
-                if let Ok(parsed) = from_json::<Test>(&json) {
+            if let Ok(json) = to_json(&data)
+                && let Ok(parsed) = from_json::<Test>(&json) {
                     prop_assert_eq!(data, parsed);
                 }
-            }
         }
 
         /// Pretty printing always contains newlines for non-trivial structures
@@ -360,7 +359,7 @@ mod tests {
             vendor in "[a-z][a-z0-9-]{2,20}",
             package in "[a-z][a-z0-9-]{2,30}"
         ) {
-            let name = format!("{}/{}", vendor, package);
+            let name = format!("{vendor}/{package}");
             let data = ComposerJson {
                 name: name.clone(),
                 description: None,
@@ -463,7 +462,7 @@ mod tests {
         }
 
         let json_null = r#"{"value":null}"#;
-        let json_missing = r#"{}"#;
+        let json_missing = r"{}";
 
         let from_null: WithOption = from_json(json_null).expect("should parse null");
         let from_missing: WithOption = from_json(json_missing).expect("should parse missing");
@@ -508,10 +507,10 @@ mod tests {
                 name: s.to_string(),
                 value: 0,
             };
-            if let Ok(json) = to_json(&data) {
-                if let Ok(parsed) = from_json::<Test>(&json) {
-                    assert_eq!(data.name, parsed.name);
-                }
+            if let Ok(json) = to_json(&data)
+                && let Ok(parsed) = from_json::<Test>(&json)
+            {
+                assert_eq!(data.name, parsed.name);
             }
         }
     }

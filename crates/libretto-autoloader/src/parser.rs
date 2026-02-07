@@ -100,7 +100,7 @@ impl PhpParser {
 
     /// Parse content as string and return definitions only.
     ///
-    /// Uses mago-names' NameResolver which internally uses a walker that properly
+    /// Uses mago-names' `NameResolver` which internally uses a walker that properly
     /// traverses all AST nodes, including nested class definitions inside functions.
     ///
     /// If you also need the semantic fingerprint for change detection, use
@@ -115,11 +115,11 @@ impl PhpParser {
 
         // Use NameResolver to walk the AST - this handles all nested definitions
         let resolver = NameResolver::new(&arena);
-        let resolved_names = resolver.resolve(&program);
+        let resolved_names = resolver.resolve(program);
 
         // Collect all definitions by walking the AST ourselves but using resolved names
         let mut definitions = Vec::new();
-        self.collect_definitions(&program, &resolved_names, &mut definitions, content);
+        self.collect_definitions(program, &resolved_names, &mut definitions, content);
 
         definitions
     }
@@ -138,7 +138,7 @@ impl PhpParser {
 
         // Use NameResolver to walk the AST - this handles all nested definitions
         let resolver = NameResolver::new(&arena);
-        let resolved_names = resolver.resolve(&program);
+        let resolved_names = resolver.resolve(program);
 
         // Compute semantic fingerprint using mago-fingerprint
         // This is position-insensitive and ignores whitespace changes
@@ -147,7 +147,7 @@ impl PhpParser {
 
         // Collect all definitions by walking the AST ourselves but using resolved names
         let mut definitions = Vec::new();
-        self.collect_definitions(&program, &resolved_names, &mut definitions, content);
+        self.collect_definitions(program, &resolved_names, &mut definitions, content);
 
         ParseResult {
             definitions,
@@ -163,7 +163,7 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for statement in program.statements.iter() {
+        for statement in &program.statements {
             self.visit_statement(statement, resolved_names, definitions, source);
         }
     }
@@ -180,7 +180,7 @@ impl PhpParser {
             Statement::Namespace(ns) => {
                 // Visit statements inside the namespace
                 // The statements() method is on Namespace, not NamespaceBody
-                for stmt in ns.statements().iter() {
+                for stmt in ns.statements() {
                     self.visit_statement(stmt, resolved_names, definitions, source);
                 }
             }
@@ -248,7 +248,7 @@ impl PhpParser {
                 // Visit try block
                 self.visit_block(&try_stmt.block, resolved_names, definitions, source);
                 // Visit catch blocks
-                for catch in try_stmt.catch_clauses.iter() {
+                for catch in &try_stmt.catch_clauses {
                     self.visit_block(&catch.block, resolved_names, definitions, source);
                 }
                 // Visit finally block
@@ -269,7 +269,7 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for stmt in block.statements.iter() {
+        for stmt in &block.statements {
             self.visit_statement(stmt, resolved_names, definitions, source);
         }
     }
@@ -282,12 +282,11 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for member in class.members.iter() {
-            if let mago_syntax::ast::ClassLikeMember::Method(method) = member {
-                if let MethodBody::Concrete(block) = &method.body {
+        for member in &class.members {
+            if let mago_syntax::ast::ClassLikeMember::Method(method) = member
+                && let MethodBody::Concrete(block) = &method.body {
                     self.visit_block(block, resolved_names, definitions, source);
                 }
-            }
         }
     }
 
@@ -299,12 +298,11 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for member in interface.members.iter() {
-            if let mago_syntax::ast::ClassLikeMember::Method(method) = member {
-                if let MethodBody::Concrete(block) = &method.body {
+        for member in &interface.members {
+            if let mago_syntax::ast::ClassLikeMember::Method(method) = member
+                && let MethodBody::Concrete(block) = &method.body {
                     self.visit_block(block, resolved_names, definitions, source);
                 }
-            }
         }
     }
 
@@ -316,12 +314,11 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for member in tr.members.iter() {
-            if let mago_syntax::ast::ClassLikeMember::Method(method) = member {
-                if let MethodBody::Concrete(block) = &method.body {
+        for member in &tr.members {
+            if let mago_syntax::ast::ClassLikeMember::Method(method) = member
+                && let MethodBody::Concrete(block) = &method.body {
                     self.visit_block(block, resolved_names, definitions, source);
                 }
-            }
         }
     }
 
@@ -333,12 +330,11 @@ impl PhpParser {
         definitions: &mut Vec<PhpDefinition>,
         source: &str,
     ) {
-        for member in en.members.iter() {
-            if let mago_syntax::ast::ClassLikeMember::Method(method) = member {
-                if let MethodBody::Concrete(block) = &method.body {
+        for member in &en.members {
+            if let mago_syntax::ast::ClassLikeMember::Method(method) = member
+                && let MethodBody::Concrete(block) = &method.body {
                     self.visit_block(block, resolved_names, definitions, source);
                 }
-            }
         }
     }
 
@@ -615,7 +611,7 @@ namespace App\Repositories {
     #[test]
     fn parse_nested_class_in_function() {
         let mut parser = PhpParser::new();
-        let content = r#"<?php
+        let content = r"<?php
 function foo() {
     class NestedA {
         public function bar(): void {
@@ -623,7 +619,7 @@ function foo() {
         }
     }
 }
-"#;
+";
 
         let defs = parser.parse_str(content);
         assert_eq!(defs.len(), 2, "Should find both nested classes A and B");
@@ -634,11 +630,11 @@ function foo() {
     #[test]
     fn parse_class_in_if_block() {
         let mut parser = PhpParser::new();
-        let content = r#"<?php
+        let content = r"<?php
 if (true) {
     class ConditionalClass {}
 }
-"#;
+";
 
         let defs = parser.parse_str(content);
         assert_eq!(defs.len(), 1);
@@ -648,7 +644,7 @@ if (true) {
     #[test]
     fn parse_class_in_method() {
         let mut parser = PhpParser::new();
-        let content = r#"<?php
+        let content = r"<?php
 namespace App;
 
 class Outer {
@@ -656,7 +652,7 @@ class Outer {
         class Inner {}
     }
 }
-"#;
+";
 
         let defs = parser.parse_str(content);
         assert_eq!(defs.len(), 2, "Should find both Outer and Inner classes");

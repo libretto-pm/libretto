@@ -4,6 +4,7 @@ use crate::error::{ConfigError, Result};
 use crate::types::{
     ComposerConfig, ComposerManifest, RepositoryConfig, RepositoryDefinition, RepositoryType,
 };
+use libretto_core::is_platform_package_name;
 use std::path::Path;
 
 /// Validation severity level.
@@ -325,11 +326,7 @@ impl Validator {
     /// Validate package name format.
     fn validate_package_name(&self, name: &str, field: &str, result: &mut ValidationResult) {
         // Check for vendor/package format
-        if !name.contains('/')
-            && !name.starts_with("ext-")
-            && !name.starts_with("lib-")
-            && name != "php"
-        {
+        if !name.contains('/') && !is_platform_package_name(name) {
             result.add(
                 ValidationIssue::error(
                     "package.name.format",
@@ -596,6 +593,23 @@ mod tests {
         let mut result = ValidationResult::new();
         validator.validate_package_name("invalid", "test", &mut result);
         assert!(result.has_errors());
+    }
+
+    #[test]
+    fn validate_platform_package_names() {
+        let validator = Validator::new();
+        let mut result = ValidationResult::new();
+
+        validator.validate_package_name("php-64bit", "test.php-64bit", &mut result);
+        validator.validate_package_name(
+            "composer-runtime-api",
+            "test.composer-runtime-api",
+            &mut result,
+        );
+        validator.validate_package_name("ext-json", "test.ext-json", &mut result);
+        validator.validate_package_name("lib-icu-uc", "test.lib-icu-uc", &mut result);
+
+        assert!(!result.has_errors());
     }
 
     #[test]

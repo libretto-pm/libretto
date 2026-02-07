@@ -7,7 +7,7 @@ use libretto_bench::fixtures::{generate_composer_json, generate_composer_lock};
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::collections::HashSet;
 
-/// Benchmark composer.lock parsing with sonic-rs (using sonic_rs::Value for full SIMD benefits).
+/// Benchmark composer.lock parsing with sonic-rs (using `sonic_rs::Value` for full SIMD benefits).
 fn bench_lockfile_parse_sonic(c: &mut Criterion) {
     let mut group = c.benchmark_group("lockfile/parse/sonic_rs");
 
@@ -32,7 +32,7 @@ fn bench_lockfile_parse_sonic(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark composer.lock parsing with serde_json (for comparison).
+/// Benchmark composer.lock parsing with `serde_json` (for comparison).
 fn bench_lockfile_parse_serde(c: &mut Criterion) {
     let mut group = c.benchmark_group("lockfile/parse/serde_json");
 
@@ -81,7 +81,7 @@ fn bench_content_hash(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark lock file serialization with sonic_rs (using sonic_rs::Value for consistency).
+/// Benchmark lock file serialization with `sonic_rs` (using `sonic_rs::Value` for consistency).
 fn bench_lockfile_serialize(c: &mut Criterion) {
     let mut group = c.benchmark_group("lockfile/serialize");
 
@@ -106,7 +106,7 @@ fn bench_lockfile_serialize(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark lock file diff computation using sonic_rs for SIMD-accelerated access.
+/// Benchmark lock file diff computation using `sonic_rs` for SIMD-accelerated access.
 fn bench_lockfile_diff(c: &mut Criterion) {
     let mut group = c.benchmark_group("lockfile/diff");
     group.sample_size(50);
@@ -162,7 +162,7 @@ fn bench_lockfile_diff(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark deterministic JSON output using sonic_rs for SIMD-accelerated serialization.
+/// Benchmark deterministic JSON output using `sonic_rs` for SIMD-accelerated serialization.
 fn bench_deterministic_output(c: &mut Criterion) {
     let mut group = c.benchmark_group("lockfile/deterministic");
 

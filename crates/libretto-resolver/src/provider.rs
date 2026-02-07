@@ -126,7 +126,7 @@ impl<S: PackageSource> std::fmt::Debug for ComposerProvider<S> {
             .field("config", &self.config)
             .field("excluded_packages", &self.excluded_packages.len())
             .field("locked_versions", &self.locked_versions.lock().len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -150,7 +150,7 @@ impl<S: PackageSource> ComposerProvider<S> {
     }
 
     /// Lock a package to a specific version.
-    pub fn lock_version(&self, package: PackageName, version: ComposerVersion) {
+    pub fn lock_version(&self, package: &PackageName, version: ComposerVersion) {
         self.locked_versions
             .lock()
             .insert(Arc::from(package.as_str()), version);
@@ -175,13 +175,7 @@ impl<S: PackageSource> ComposerProvider<S> {
 
     /// Check if a package is a platform package.
     fn is_platform_package(name: &str) -> bool {
-        name == "php"
-            || name.starts_with("php-")
-            || name.starts_with("ext-")
-            || name.starts_with("lib-")
-            || name == "composer"
-            || name == "composer-plugin-api"
-            || name == "composer-runtime-api"
+        libretto_core::is_platform_package_name(name)
     }
 
     /// Record that a package was requested (for prioritization).
@@ -299,9 +293,7 @@ impl<S: PackageSource + 'static> DependencyProvider for ComposerProvider<S> {
         }
 
         // Get all versions for this package
-        let entry = if let Some(e) = self.index.get(package) {
-            e
-        } else {
+        let Some(entry) = self.index.get(package) else {
             debug!(package = %package, "package not found");
             return Ok(None);
         };
@@ -352,9 +344,7 @@ impl<S: PackageSource + 'static> DependencyProvider for ComposerProvider<S> {
         }
 
         // Get dependencies from index
-        let deps = if let Some(d) = self.index.get_dependencies(package, version) {
-            d
-        } else {
+        let Some(deps) = self.index.get_dependencies(package, version) else {
             warn!(package = %package, version = %version, "dependencies not found");
             return Ok(Dependencies::Available(DependencyConstraints::default()));
         };
@@ -483,6 +473,9 @@ mod tests {
             "lib-openssl"
         ));
         assert!(!ComposerProvider::<MemorySource>::is_platform_package(
+            "php-open-source-saver/jwt-auth"
+        ));
+        assert!(!ComposerProvider::<MemorySource>::is_platform_package(
             "test/pkg"
         ));
     }
@@ -515,7 +508,7 @@ mod tests {
             Dependencies::Available(d) => {
                 assert_eq!(d.len(), 1);
             }
-            _ => panic!("expected available dependencies"),
+            Dependencies::Unavailable(_) => panic!("expected available dependencies"),
         }
     }
 }

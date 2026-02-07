@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::Args;
+use libretto_core::is_platform_package_name;
 use owo_colors::OwoColorize;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait, Value};
 
@@ -73,18 +74,17 @@ pub async fn run(args: ShowArgs) -> Result<()> {
         let installed_ver = pkg.get("version").and_then(|v| v.as_str()).unwrap_or("");
 
         if let Some(req_ver) = &args.version {
-            if req_ver != installed_ver {
-                // Version mismatch, fall back to API
-                // proceed to API fetch below
-            } else {
+            if req_ver == installed_ver {
                 let installed = Some(installed_ver.to_string());
-                print_package_details(&pkg, &installed, &args, &[pkg.clone()])?;
+                print_package_details(&pkg, &installed, &args, std::slice::from_ref(&pkg))?;
                 return Ok(());
             }
+            // Version mismatch, fall back to API
+            // proceed to API fetch below
         } else {
             // No version requested, show installed
             let installed = Some(installed_ver.to_string());
-            print_package_details(&pkg, &installed, &args, &[pkg.clone()])?;
+            print_package_details(&pkg, &installed, &args, std::slice::from_ref(&pkg))?;
             return Ok(());
         }
     }
@@ -140,7 +140,7 @@ pub async fn run(args: ShowArgs) -> Result<()> {
             packages
                 .iter()
                 .find(|v| v.get("version_normalized").and_then(|s| s.as_str()) == Some(req_version))
-                .ok_or_else(|| anyhow::anyhow!("Version {} not found", req_version))?
+                .ok_or_else(|| anyhow::anyhow!("Version {req_version} not found"))?
         }
     } else {
         // Get latest stable version (or latest if no stable)
@@ -267,10 +267,10 @@ fn print_package_details(
     print_kv("versions", &version_display, colors);
 
     // Release time
-    if let Some(t) = time {
-        if let Some(formatted) = format_release_time(t) {
-            print_kv("released", &formatted, colors);
-        }
+    if let Some(t) = time
+        && let Some(formatted) = format_release_time(t)
+    {
+        print_kv("released", &formatted, colors);
     }
 
     print_kv("type", pkg_type, colors);
@@ -280,7 +280,7 @@ fn print_package_details(
         let license_str: Vec<_> = licenses
             .iter()
             .filter_map(|l| l.as_str())
-            .map(|l| format_license(l))
+            .map(format_license)
             .collect();
         if !license_str.is_empty() {
             print_kv("license", &license_str.join(", "), colors);
@@ -336,10 +336,10 @@ fn print_package_details(
         let vendor_path = std::env::current_dir()
             .ok()
             .map(|p| p.join("vendor").join(name));
-        if let Some(path) = vendor_path {
-            if path.exists() {
-                print_kv("path", &path.display().to_string(), colors);
-            }
+        if let Some(path) = vendor_path
+            && path.exists()
+        {
+            print_kv("path", &path.display().to_string(), colors);
         }
     }
 
@@ -369,25 +369,25 @@ fn print_package_details(
     }
 
     // Authors
-    if let Some(authors) = pkg.get("authors").and_then(|v| v.as_array()) {
-        if !authors.is_empty() {
-            println!();
-            print_section_title("authors", colors);
-            for author in authors {
-                let author_name = author
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-                let email = author.get("email").and_then(|v| v.as_str());
-                if let Some(e) = email {
-                    if colors {
-                        println!("  {} {}", author_name.cyan(), format!("<{e}>").dimmed());
-                    } else {
-                        println!("  {author_name} <{e}>");
-                    }
+    if let Some(authors) = pkg.get("authors").and_then(|v| v.as_array())
+        && !authors.is_empty()
+    {
+        println!();
+        print_section_title("authors", colors);
+        for author in authors {
+            let author_name = author
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            let email = author.get("email").and_then(|v| v.as_str());
+            if let Some(e) = email {
+                if colors {
+                    println!("  {} {}", author_name.cyan(), format!("<{e}>").dimmed());
                 } else {
-                    println!("  {author_name}");
+                    println!("  {author_name} <{e}>");
                 }
+            } else {
+                println!("  {author_name}");
             }
         }
     }
@@ -401,65 +401,65 @@ fn print_package_details(
     }
 
     // Suggests
-    if let Some(suggests) = pkg.get("suggest").and_then(|v| v.as_object()) {
-        if !suggests.is_empty() {
-            println!();
-            print_section_title("suggests", colors);
-            for (name, reason) in suggests.iter() {
-                let reason_str = reason.as_str().unwrap_or("");
-                if colors {
-                    println!("  {} {}", name.cyan(), reason_str.dimmed());
-                } else {
-                    println!("  {name} {reason_str}");
-                }
+    if let Some(suggests) = pkg.get("suggest").and_then(|v| v.as_object())
+        && !suggests.is_empty()
+    {
+        println!();
+        print_section_title("suggests", colors);
+        for (name, reason) in suggests {
+            let reason_str = reason.as_str().unwrap_or("");
+            if colors {
+                println!("  {} {}", name.cyan(), reason_str.dimmed());
+            } else {
+                println!("  {name} {reason_str}");
             }
         }
     }
 
     // Provides
-    if let Some(provides) = pkg.get("provide").and_then(|v| v.as_object()) {
-        if !provides.is_empty() {
-            println!();
-            print_section_title("provides", colors);
-            for (name, version) in provides.iter() {
-                let ver = version.as_str().unwrap_or("*");
-                if colors {
-                    println!("  {} {}", name.green(), ver.yellow());
-                } else {
-                    println!("  {name} {ver}");
-                }
+    if let Some(provides) = pkg.get("provide").and_then(|v| v.as_object())
+        && !provides.is_empty()
+    {
+        println!();
+        print_section_title("provides", colors);
+        for (name, version) in provides {
+            let ver = version.as_str().unwrap_or("*");
+            if colors {
+                println!("  {} {}", name.green(), ver.yellow());
+            } else {
+                println!("  {name} {ver}");
             }
         }
     }
 
     // Conflicts
-    if let Some(conflicts) = pkg.get("conflict").and_then(|v| v.as_object()) {
-        if !conflicts.is_empty() {
-            println!();
-            print_section_title("conflicts", colors);
-            for (name, version) in conflicts.iter() {
-                let ver = version.as_str().unwrap_or("*");
-                if colors {
-                    println!("  {} {}", name.red(), ver.yellow());
-                } else {
-                    println!("  {name} {ver}");
-                }
+    if let Some(conflicts) = pkg.get("conflict").and_then(|v| v.as_object())
+        && !conflicts.is_empty()
+    {
+        println!();
+        print_section_title("conflicts", colors);
+        for (name, version) in conflicts {
+            let ver = version.as_str().unwrap_or("*");
+            if colors {
+                println!("  {} {}", name.red(), ver.yellow());
+            } else {
+                println!("  {name} {ver}");
             }
         }
     }
 
     // Replaces
-    if let Some(replaces) = pkg.get("replace").and_then(|v| v.as_object()) {
-        if !replaces.is_empty() {
-            println!();
-            print_section_title("replaces", colors);
-            for (name, version) in replaces.iter() {
-                let ver = version.as_str().unwrap_or("self.version");
-                if colors {
-                    println!("  {} {}", name.green(), ver.yellow());
-                } else {
-                    println!("  {name} {ver}");
-                }
+    if let Some(replaces) = pkg.get("replace").and_then(|v| v.as_object())
+        && !replaces.is_empty()
+    {
+        println!();
+        print_section_title("replaces", colors);
+        for (name, version) in replaces {
+            let ver = version.as_str().unwrap_or("self.version");
+            if colors {
+                println!("  {} {}", name.green(), ver.yellow());
+            } else {
+                println!("  {name} {ver}");
             }
         }
     }
@@ -532,21 +532,21 @@ fn print_kv(key: &str, value: &str, colors: bool) {
 }
 
 fn print_dependency_section(pkg: &Value, json_key: &str, title: &str, colors: bool) {
-    if let Some(deps) = pkg.get(json_key).and_then(|v| v.as_object()) {
-        if !deps.is_empty() {
-            println!();
-            print_section_title(title, colors);
+    if let Some(deps) = pkg.get(json_key).and_then(|v| v.as_object())
+        && !deps.is_empty()
+    {
+        println!();
+        print_section_title(title, colors);
 
-            // Find max name length for alignment
-            let max_len = deps.iter().map(|(name, _)| name.len()).max().unwrap_or(20);
+        // Find max name length for alignment
+        let max_len = deps.iter().map(|(name, _)| name.len()).max().unwrap_or(20);
 
-            for (name, constraint) in deps.iter() {
-                let c = constraint.as_str().unwrap_or("*");
-                if colors {
-                    println!("  {:width$} {}", name.green(), c.yellow(), width = max_len);
-                } else {
-                    println!("  {name:width$} {c}", width = max_len);
-                }
+        for (name, constraint) in deps {
+            let c = constraint.as_str().unwrap_or("*");
+            if colors {
+                println!("  {:width$} {}", name.green(), c.yellow(), width = max_len);
+            } else {
+                println!("  {name:max_len$} {c}");
             }
         }
     }
@@ -560,7 +560,7 @@ fn print_autoload(autoload: &Value, colors: bool) {
         } else {
             println!("  psr-4");
         }
-        for (ns, path) in psr4.iter() {
+        for (ns, path) in psr4 {
             let path_str = if let Some(arr) = path.as_array() {
                 arr.iter()
                     .filter_map(|p| p.as_str())
@@ -584,7 +584,7 @@ fn print_autoload(autoload: &Value, colors: bool) {
         } else {
             println!("  psr-0");
         }
-        for (ns, path) in psr0.iter() {
+        for (ns, path) in psr0 {
             let path_str = path.as_str().unwrap_or("");
             if colors {
                 println!("    {} => {}", ns.green(), path_str);
@@ -595,30 +595,30 @@ fn print_autoload(autoload: &Value, colors: bool) {
     }
 
     // Classmap
-    if let Some(classmap) = autoload.get("classmap").and_then(|v| v.as_array()) {
-        if !classmap.is_empty() {
-            if colors {
-                println!("  {}", "classmap".cyan());
-            } else {
-                println!("  classmap");
-            }
-            for path in classmap.iter().filter_map(|p| p.as_str()) {
-                println!("    {path}");
-            }
+    if let Some(classmap) = autoload.get("classmap").and_then(|v| v.as_array())
+        && !classmap.is_empty()
+    {
+        if colors {
+            println!("  {}", "classmap".cyan());
+        } else {
+            println!("  classmap");
+        }
+        for path in classmap.iter().filter_map(|p| p.as_str()) {
+            println!("    {path}");
         }
     }
 
     // Files
-    if let Some(files) = autoload.get("files").and_then(|v| v.as_array()) {
-        if !files.is_empty() {
-            if colors {
-                println!("  {}", "files".cyan());
-            } else {
-                println!("  files");
-            }
-            for file in files.iter().filter_map(|f| f.as_str()) {
-                println!("    {file}");
-            }
+    if let Some(files) = autoload.get("files").and_then(|v| v.as_array())
+        && !files.is_empty()
+    {
+        if colors {
+            println!("  {}", "files".cyan());
+        } else {
+            println!("  files");
+        }
+        for file in files.iter().filter_map(|f| f.as_str()) {
+            println!("    {file}");
         }
     }
 }
@@ -915,7 +915,7 @@ async fn show_tree(lock: &Value) -> Result<()> {
                 if let Some(require) = pkg.get("require").and_then(|v| v.as_object()) {
                     let pkg_deps: Vec<(String, String)> = require
                         .iter()
-                        .filter(|(n, _)| !n.starts_with("php") && !n.starts_with("ext-"))
+                        .filter(|(n, _)| !is_platform_package_name(n))
                         .map(|(n, c)| (n.to_string(), c.as_str().unwrap_or("*").to_string()))
                         .collect();
                     deps.insert(name.to_string(), pkg_deps);
@@ -934,7 +934,7 @@ async fn show_tree(lock: &Value) -> Result<()> {
 
         if let Some(require) = composer.get("require").and_then(|v| v.as_object()) {
             for (name, _) in require {
-                if !name.starts_with("php") && !name.starts_with("ext-") {
+                if !is_platform_package_name(name) {
                     root_deps.push(name.to_string());
                 }
             }
@@ -942,7 +942,7 @@ async fn show_tree(lock: &Value) -> Result<()> {
 
         if let Some(require_dev) = composer.get("require-dev").and_then(|v| v.as_object()) {
             for (name, _) in require_dev {
-                if !name.starts_with("php") && !name.starts_with("ext-") {
+                if !is_platform_package_name(name) {
                     root_deps.push(name.to_string());
                 }
             }
@@ -952,6 +952,7 @@ async fn show_tree(lock: &Value) -> Result<()> {
     root_deps.sort();
 
     // Print tree
+    #[allow(clippy::too_many_arguments)]
     fn print_tree_node(
         name: &str,
         versions: &HashMap<String, String>,

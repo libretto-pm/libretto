@@ -380,7 +380,7 @@ pub fn is_superuser() -> bool {
     {
         // On Windows, check for elevated privileges
         // This is a simplified check
-        std::env::var("USERNAME").map_or(false, |u| u.eq_ignore_ascii_case("Administrator"))
+        std::env::var("USERNAME").is_ok_and(|u| u.eq_ignore_ascii_case("Administrator"))
     }
     #[cfg(not(any(unix, windows)))]
     {

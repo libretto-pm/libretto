@@ -97,14 +97,7 @@ impl PackageName {
     /// Check if this is a platform package (php, ext-*, lib-*).
     #[must_use]
     pub fn is_platform(&self) -> bool {
-        let full = self.as_str();
-        full == "php"
-            || full.starts_with("php-")
-            || full.starts_with("ext-")
-            || full.starts_with("lib-")
-            || full == "composer"
-            || full == "composer-plugin-api"
-            || full == "composer-runtime-api"
+        libretto_core::is_platform_package_name(self.as_str())
     }
 }
 
@@ -423,15 +416,14 @@ mod tests {
 
         #[test]
         fn is_platform() {
+            // "php" alone is not vendor/name format, so parse returns None.
+            // Platform packages like "php" are handled at the dependency filtering level.
+            assert!(PackageName::parse("php").is_none());
             assert!(
-                PackageName::parse("php")
-                    .unwrap_or_else(|| PackageName::new("php", "php"))
+                !PackageName::parse("php-open-source-saver/jwt-auth")
+                    .unwrap()
                     .is_platform()
-                    || true
-            ); // php alone is not vendor/name format
-
-            // These would need special handling since they're not vendor/name format
-            // For now, we handle them at the dependency filtering level
+            );
         }
     }
 

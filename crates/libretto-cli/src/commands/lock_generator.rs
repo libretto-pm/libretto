@@ -1,6 +1,7 @@
 //! Lock file generation using `sonic_rs` for maximum performance.
 
 use anyhow::Result;
+use libretto_core::is_platform_package_name;
 use libretto_resolver::Resolution;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait, Value};
 use std::collections::BTreeMap;
@@ -242,7 +243,7 @@ pub fn generate_lock_file(
 
     if let Some(req) = composer.get("require").and_then(|v| v.as_object()) {
         for (name, constraint) in req {
-            if (name == "php" || name.starts_with("ext-") || name.starts_with("lib-"))
+            if is_platform_package_name(name)
                 && let Some(c) = constraint.as_str()
             {
                 platform.insert(name.to_string(), c.to_string());
@@ -251,7 +252,7 @@ pub fn generate_lock_file(
     }
     if let Some(req) = composer.get("require-dev").and_then(|v| v.as_object()) {
         for (name, constraint) in req {
-            if (name == "php" || name.starts_with("ext-") || name.starts_with("lib-"))
+            if is_platform_package_name(name)
                 && let Some(c) = constraint.as_str()
             {
                 platform_dev.insert(name.to_string(), c.to_string());

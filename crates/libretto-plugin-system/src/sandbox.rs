@@ -613,11 +613,11 @@ mod tests {
 
     #[test]
     fn file_access_check() {
-        let mut config = SandboxConfig::default();
-        config.allowed_read_paths = vec![PathBuf::from("/project")];
-        config.allowed_write_paths = vec![PathBuf::from("/project/vendor")];
-
-        let sandbox = Sandbox::new(config);
+        let sandbox = Sandbox::new(SandboxConfig {
+            allowed_read_paths: vec![PathBuf::from("/project")],
+            allowed_write_paths: vec![PathBuf::from("/project/vendor")],
+            ..Default::default()
+        });
 
         assert!(sandbox.is_read_allowed("test", Path::new("/project/src/file.php")));
         assert!(!sandbox.is_read_allowed("test", Path::new("/etc/passwd")));
@@ -628,10 +628,10 @@ mod tests {
 
     #[test]
     fn network_access_check() {
-        let mut config = SandboxConfig::default();
-        config.allowed_hosts = vec!["packagist.org".to_string(), "*.github.com".to_string()];
-
-        let sandbox = Sandbox::new(config);
+        let sandbox = Sandbox::new(SandboxConfig {
+            allowed_hosts: vec!["packagist.org".to_string(), "*.github.com".to_string()],
+            ..Default::default()
+        });
 
         assert!(sandbox.is_network_allowed("test", "packagist.org"));
         assert!(sandbox.is_network_allowed("test", "api.github.com"));
@@ -640,21 +640,21 @@ mod tests {
 
     #[test]
     fn network_blocked() {
-        let mut config = SandboxConfig::default();
-        config.block_network = true;
-
-        let sandbox = Sandbox::new(config);
+        let sandbox = Sandbox::new(SandboxConfig {
+            block_network: true,
+            ..Default::default()
+        });
 
         assert!(!sandbox.is_network_allowed("test", "packagist.org"));
     }
 
     #[test]
     fn command_execution_check() {
-        let mut config = SandboxConfig::default();
-        config.allow_exec = true;
-        config.allowed_commands = vec!["php".to_string(), "composer".to_string()];
-
-        let sandbox = Sandbox::new(config);
+        let sandbox = Sandbox::new(SandboxConfig {
+            allow_exec: true,
+            allowed_commands: vec!["php".to_string(), "composer".to_string()],
+            ..Default::default()
+        });
 
         assert!(sandbox.is_command_allowed("test", "php script.php"));
         assert!(sandbox.is_command_allowed("test", "composer install"));
@@ -663,11 +663,15 @@ mod tests {
 
     #[test]
     fn plugin_override() {
-        let mut config = SandboxConfig::default();
-        config.allowed_hosts = vec!["packagist.org".to_string()];
+        let mut config = SandboxConfig {
+            allowed_hosts: vec!["packagist.org".to_string()],
+            ..Default::default()
+        };
 
-        let mut override_config = SandboxOverride::default();
-        override_config.additional_hosts = vec!["special.example.com".to_string()];
+        let override_config = SandboxOverride {
+            additional_hosts: vec!["special.example.com".to_string()],
+            ..Default::default()
+        };
         config
             .plugin_overrides
             .insert("special-plugin".to_string(), override_config);
@@ -694,10 +698,10 @@ mod tests {
 
     #[test]
     fn timeout_tracking() {
-        let mut config = SandboxConfig::default();
-        config.timeout = Duration::from_millis(100);
-
-        let sandbox = Sandbox::new(config);
+        let sandbox = Sandbox::new(SandboxConfig {
+            timeout: Duration::from_millis(100),
+            ..Default::default()
+        });
 
         sandbox.start_operation("test");
 

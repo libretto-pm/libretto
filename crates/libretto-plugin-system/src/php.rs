@@ -552,7 +552,8 @@ impl PhpPlugin {
         *self.receiver.write() = None;
 
         // Kill process if still running
-        if let Some(mut child) = self.process.write().take() {
+        let maybe_child = { self.process.write().take() };
+        if let Some(mut child) = maybe_child {
             let _ = child.kill().await;
         }
 
@@ -682,11 +683,15 @@ impl PhpPlugin {
 
     /// Send a message to the plugin.
     async fn send_message(&self, msg: IpcMessage) -> Result<()> {
-        let sender = self.sender.read();
-        let sender = sender.as_ref().ok_or_else(|| PluginError::Ipc {
-            plugin: self.class.clone(),
-            message: "plugin not started".into(),
-        })?;
+        let sender = self
+            .sender
+            .read()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| PluginError::Ipc {
+                plugin: self.class.clone(),
+                message: "plugin not started".into(),
+            })?;
 
         sender.send(msg).await.map_err(|e| PluginError::Ipc {
             plugin: self.class.clone(),
@@ -696,15 +701,24 @@ impl PhpPlugin {
 
     /// Receive a response with the given ID.
     async fn receive_response(&self, id: u64) -> Result<IpcMessage> {
-        let mut receiver = self.receiver.write();
-        let receiver = receiver.as_mut().ok_or_else(|| PluginError::Ipc {
+        let mut receiver = self
+            .receiver
+            .write()
+            .take()
+            .ok_or_else(|| PluginError::Ipc {
+                plugin: self.class.clone(),
+                message: "plugin not started".into(),
+            })?;
+
+        let mut result = Err(PluginError::Ipc {
             plugin: self.class.clone(),
-            message: "plugin not started".into(),
-        })?;
+            message: "channel closed".into(),
+        });
 
         while let Some(msg) = receiver.recv().await {
             if msg.id == id {
-                return Ok(msg);
+                result = Ok(msg);
+                break;
             }
             // Discard messages with different IDs (shouldn't happen in normal operation)
             warn!(
@@ -715,10 +729,8 @@ impl PhpPlugin {
             );
         }
 
-        Err(PluginError::Ipc {
-            plugin: self.class.clone(),
-            message: "channel closed".into(),
-        })
+        *self.receiver.write() = Some(receiver);
+        result
     }
 
     /// Get the next message ID.

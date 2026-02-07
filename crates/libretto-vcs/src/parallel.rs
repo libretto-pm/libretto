@@ -512,6 +512,6 @@ mod tests {
         };
 
         assert!(result.all_succeeded());
-        assert_eq!(result.success_rate(), 100.0);
+        assert!((result.success_rate() - 100.0).abs() < f64::EPSILON);
     }
 }

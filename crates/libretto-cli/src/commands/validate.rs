@@ -4,6 +4,7 @@ use anyhow::Result;
 use clap::Args;
 use console::style;
 use libretto_core::from_json;
+use libretto_core::is_platform_package_name;
 use serde::Deserialize;
 use std::path::Path;
 use tracing::info;
@@ -105,8 +106,23 @@ pub async fn run(args: ValidateArgs) -> Result<()> {
 }
 
 fn is_platform_requirement(name: &str) -> bool {
-    name == "php"
-        || name.starts_with("ext-")
-        || name.starts_with("lib-")
-        || name == "composer-plugin-api"
+    is_platform_package_name(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_platform_requirement;
+
+    #[test]
+    fn platform_requirement_detection_matches_composer_rules() {
+        assert!(is_platform_requirement("php"));
+        assert!(is_platform_requirement("php-64bit"));
+        assert!(is_platform_requirement("composer-plugin-api"));
+        assert!(is_platform_requirement("composer-runtime-api"));
+        assert!(is_platform_requirement("ext-json"));
+        assert!(is_platform_requirement("lib-icu-uc"));
+
+        assert!(!is_platform_requirement("php-open-source-saver/jwt-auth"));
+        assert!(!is_platform_requirement("php-http/discovery"));
+    }
 }

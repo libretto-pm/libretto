@@ -24,11 +24,11 @@ fn generate_lock_with_packages(count: usize) -> libretto_lockfile::ComposerLock 
             format!("vendor{}/package{}", i / 100, i),
             format!("{}.0.0", i % 10),
         );
-        pkg.description = Some(format!("Package {} description", i));
+        pkg.description = Some(format!("Package {i} description"));
         pkg.license = vec!["MIT".to_string()];
         pkg.source = Some(PackageSourceInfo::git(
             format!("https://github.com/vendor{}/package{}.git", i / 100, i),
-            format!("abc{:06x}", i),
+            format!("abc{i:06x}"),
         ));
         pkg.dist = Some(
             PackageDistInfo::zip(format!(
@@ -36,7 +36,7 @@ fn generate_lock_with_packages(count: usize) -> libretto_lockfile::ComposerLock 
                 i / 100,
                 i
             ))
-            .with_shasum(format!("{:040x}", i)),
+            .with_shasum(format!("{i:040x}")),
         );
 
         // Add some dependencies
@@ -52,7 +52,7 @@ fn generate_lock_with_packages(count: usize) -> libretto_lockfile::ComposerLock 
 
     // Add dev packages (10% of total)
     for i in 0..count / 10 {
-        let pkg = LockedPackage::new(format!("dev{}/test{}", i / 10, i), format!("{}.0.0-dev", i));
+        let pkg = LockedPackage::new(format!("dev{}/test{}", i / 10, i), format!("{i}.0.0-dev"));
         generator.add_package_dev(pkg);
     }
 
@@ -65,7 +65,7 @@ fn generate_lock_with_packages(count: usize) -> libretto_lockfile::ComposerLock 
 fn bench_serialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("serialization");
 
-    for size in [10, 100, 500, 1000].iter() {
+    for size in &[10, 100, 500, 1000] {
         let lock = generate_lock_with_packages(*size);
 
         group.throughput(Throughput::Elements(*size as u64));
@@ -90,7 +90,7 @@ fn bench_serialization(c: &mut Criterion) {
 fn bench_parsing(c: &mut Criterion) {
     let mut group = c.benchmark_group("parsing");
 
-    for size in [10, 100, 500, 1000].iter() {
+    for size in &[10, 100, 500, 1000] {
         let lock = generate_lock_with_packages(*size);
         let json = DeterministicSerializer::serialize(&lock).unwrap();
 
@@ -148,7 +148,7 @@ fn bench_hashing(c: &mut Criterion) {
 fn bench_diff(c: &mut Criterion) {
     let mut group = c.benchmark_group("diff");
 
-    for size in [100, 500].iter() {
+    for size in &[100, 500] {
         let old_lock = generate_lock_with_packages(*size);
 
         // Create a modified version
@@ -160,7 +160,7 @@ fn bench_diff(c: &mut Criterion) {
         // Add some packages
         for i in 0..5 {
             new_lock.packages.push(LockedPackage::new(
-                format!("new/package{}", i),
+                format!("new/package{i}"),
                 "1.0.0".to_string(),
             ));
         }
@@ -185,7 +185,7 @@ fn bench_diff(c: &mut Criterion) {
 fn bench_validation(c: &mut Criterion) {
     let mut group = c.benchmark_group("validation");
 
-    for size in [100, 500].iter() {
+    for size in &[100, 500] {
         let lock = generate_lock_with_packages(*size);
         let validator = Validator::new();
 
@@ -215,7 +215,7 @@ fn bench_validation(c: &mut Criterion) {
 fn bench_atomic_write(c: &mut Criterion) {
     let mut group = c.benchmark_group("atomic_write");
 
-    for size in [100, 500].iter() {
+    for size in &[100, 500] {
         let lock = generate_lock_with_packages(*size);
         let json = DeterministicSerializer::serialize(&lock).unwrap();
 
@@ -240,7 +240,7 @@ fn bench_atomic_write(c: &mut Criterion) {
 fn bench_full_workflow(c: &mut Criterion) {
     let mut group = c.benchmark_group("full_workflow");
 
-    for size in [100, 500].iter() {
+    for size in &[100, 500] {
         // Generate, serialize, write, read, validate, diff
         group.bench_with_input(
             BenchmarkId::new("generate_write_read", size),
@@ -249,9 +249,6 @@ fn bench_full_workflow(c: &mut Criterion) {
                 let dir = TempDir::new().unwrap();
                 let path = dir.path().join("composer.lock");
                 let manager = LockfileManager::new(&path).unwrap();
-
-                let mut require = BTreeMap::new();
-                require.insert("vendor0/package0".to_string(), "^1.0".to_string());
 
                 b.iter(|| {
                     // Generate

@@ -345,14 +345,48 @@ pub struct AutoloaderGenerator {
     psr0_map: HashMap<String, Vec<PathBuf>>,
     /// Files to always include.
     files: Vec<PathBuf>,
+    /// Global exclude patterns for scanning.
+    global_exclude: ExcludePattern,
     /// Incremental cache.
     cache: Option<Arc<IncrementalCache>>,
     /// Scanner for PHP files.
     scanner: Scanner,
     /// Pending directories to scan (collected during `add_package`, scanned in finalize).
-    pending_scan_dirs: Vec<PathBuf>,
+    pending_scan_jobs: Vec<ScanJob>,
+    /// PSR compliance warnings collected during autoload generation.
+    psr_warnings: Vec<String>,
     /// Whether `finalize()` has been called.
     finalized: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ScanJob {
+    dir: PathBuf,
+    base: PathBuf,
+    exclude: Arc<ExcludePattern>,
+    kind: ScanKind,
+    enforce_psr_compliance: bool,
+}
+
+#[derive(Debug, Clone)]
+enum ScanKind {
+    Psr4 { namespace: String, root: PathBuf },
+    Psr0 { namespace: String, root: PathBuf },
+    Classmap,
+}
+
+impl ScanKind {
+    fn dedup_key(&self) -> String {
+        match self {
+            Self::Psr4 { namespace, root } => {
+                format!("psr4:{namespace}:{}", root.to_string_lossy())
+            }
+            Self::Psr0 { namespace, root } => {
+                format!("psr0:{namespace}:{}", root.to_string_lossy())
+            }
+            Self::Classmap => "classmap".to_string(),
+        }
+    }
 }
 
 impl AutoloaderGenerator {
@@ -366,9 +400,11 @@ impl AutoloaderGenerator {
             psr4_map: HashMap::new(),
             psr0_map: HashMap::new(),
             files: Vec::new(),
+            global_exclude: ExcludePattern::empty(),
             cache: None,
             scanner: Scanner::without_exclusions(),
-            pending_scan_dirs: Vec::new(),
+            pending_scan_jobs: Vec::new(),
+            psr_warnings: Vec::new(),
             finalized: false,
         }
     }
@@ -391,7 +427,9 @@ impl AutoloaderGenerator {
     /// Set exclude patterns for scanning.
     #[must_use]
     pub fn with_exclude_patterns(mut self, patterns: &[String]) -> Self {
-        self.scanner = Scanner::new(ExcludePattern::from_patterns(patterns));
+        let exclude = ExcludePattern::from_patterns(patterns);
+        self.global_exclude = exclude.clone();
+        self.scanner = Scanner::new(exclude);
         self
     }
 
@@ -400,6 +438,12 @@ impl AutoloaderGenerator {
     /// This collects paths for scanning but doesn't scan immediately.
     /// Call `finalize()` after all packages are added to perform the batch scan.
     pub fn add_package(&mut self, package_dir: &Path, config: &AutoloadConfig) {
+        let base = package_dir.to_path_buf();
+        let enforce_psr_compliance = !package_dir.starts_with(&self.vendor_dir);
+        let mut exclude = ExcludePattern::from_patterns(&config.exclude.patterns);
+        exclude.extend_from(&self.global_exclude);
+        let exclude = Arc::new(exclude);
+
         // Add PSR-4 mappings
         for (namespace, dirs) in &config.psr4.mappings {
             let paths: Vec<PathBuf> = dirs.iter().map(|d| package_dir.join(d)).collect();
@@ -408,7 +452,16 @@ impl AutoloaderGenerator {
             if self.optimization_level >= OptimizationLevel::Optimized {
                 for path in &paths {
                     if path.exists() {
-                        self.pending_scan_dirs.push(path.clone());
+                        self.pending_scan_jobs.push(ScanJob {
+                            dir: path.clone(),
+                            base: base.clone(),
+                            exclude: exclude.clone(),
+                            kind: ScanKind::Psr4 {
+                                namespace: namespace.clone(),
+                                root: path.clone(),
+                            },
+                            enforce_psr_compliance,
+                        });
                     }
                 }
             }
@@ -427,7 +480,16 @@ impl AutoloaderGenerator {
             if self.optimization_level >= OptimizationLevel::Optimized {
                 for path in &paths {
                     if path.exists() {
-                        self.pending_scan_dirs.push(path.clone());
+                        self.pending_scan_jobs.push(ScanJob {
+                            dir: path.clone(),
+                            base: base.clone(),
+                            exclude: exclude.clone(),
+                            kind: ScanKind::Psr0 {
+                                namespace: namespace.clone(),
+                                root: path.clone(),
+                            },
+                            enforce_psr_compliance,
+                        });
                     }
                 }
             }
@@ -442,7 +504,13 @@ impl AutoloaderGenerator {
         for path in &config.classmap.paths {
             let full_path = package_dir.join(path);
             if full_path.exists() {
-                self.pending_scan_dirs.push(full_path);
+                self.pending_scan_jobs.push(ScanJob {
+                    dir: full_path,
+                    base: base.clone(),
+                    exclude: exclude.clone(),
+                    kind: ScanKind::Classmap,
+                    enforce_psr_compliance,
+                });
             }
         }
 
@@ -465,42 +533,235 @@ impl AutoloaderGenerator {
         }
         self.finalized = true;
 
-        if self.pending_scan_dirs.is_empty() {
+        if self.pending_scan_jobs.is_empty() {
             return;
         }
 
         // Deduplicate directories using canonical paths
-        let unique_dirs: Vec<PathBuf> = {
-            let mut seen = AHashSet::with_capacity(self.pending_scan_dirs.len());
-            self.pending_scan_dirs
+        let unique_jobs: Vec<ScanJob> = {
+            let mut seen: AHashSet<(PathBuf, String)> =
+                AHashSet::with_capacity(self.pending_scan_jobs.len());
+            self.pending_scan_jobs
                 .drain(..)
-                .filter(|path| {
+                .filter(|job| {
                     // Use canonical path for deduplication to handle symlinks
-                    let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
-                    seen.insert(canonical)
+                    let canonical = job.dir.canonicalize().unwrap_or_else(|_| job.dir.clone());
+                    seen.insert((canonical, job.kind.dedup_key()))
                 })
                 .collect()
         };
 
         debug!(
             "Scanning {} unique directories for classes",
-            unique_dirs.len()
+            unique_jobs.len()
         );
 
         // Scan all directories in parallel and collect results
-        let all_results: Vec<fast_parser::FastScanResult> = unique_dirs
+        let all_results: Vec<(ScanJob, Vec<fast_parser::FastScanResult>)> = unique_jobs
             .into_par_iter()
-            .flat_map(|dir| fast_parser::FastScanner::scan_directory(&dir))
+            .map(|job| {
+                let results = fast_parser::FastScanner::scan_directory_with_exclude(
+                    &job.dir,
+                    &job.base,
+                    job.exclude.as_ref(),
+                );
+                (job, results)
+            })
             .collect();
 
         // Build classmap from results (BTreeMap is already sorted)
-        for result in all_results {
-            for class in result.classes {
-                self.classmap.insert(class, result.path.clone());
+        let mut warnings = AHashSet::new();
+        for (job, results) in all_results {
+            for result in results {
+                let classes = Self::prefer_file_stem_classes(result.classes, &result.path);
+                for class in classes {
+                    match &job.kind {
+                        ScanKind::Classmap => {
+                            self.classmap.insert(class, result.path.clone());
+                        }
+                        ScanKind::Psr4 { namespace, root } => {
+                            if !job.enforce_psr_compliance {
+                                self.classmap.insert(class, result.path.clone());
+                                continue;
+                            }
+                            if Self::psr4_class_matches(namespace, root, &result.path, &class) {
+                                self.classmap.insert(class, result.path.clone());
+                            } else {
+                                warnings.insert(Self::format_psr_warning(
+                                    "psr-4",
+                                    &class,
+                                    &result.path,
+                                    namespace,
+                                    root,
+                                    &self.vendor_dir,
+                                ));
+                            }
+                        }
+                        ScanKind::Psr0 { namespace, root } => {
+                            if !job.enforce_psr_compliance {
+                                self.classmap.insert(class, result.path.clone());
+                                continue;
+                            }
+                            if Self::psr0_class_matches(namespace, root, &result.path, &class) {
+                                self.classmap.insert(class, result.path.clone());
+                            } else {
+                                warnings.insert(Self::format_psr_warning(
+                                    "psr-0",
+                                    &class,
+                                    &result.path,
+                                    namespace,
+                                    root,
+                                    &self.vendor_dir,
+                                ));
+                            }
+                        }
+                    }
+                }
             }
+        }
+        self.psr_warnings = warnings.into_iter().collect();
+        self.psr_warnings.sort_unstable();
+
+        if self.optimization_level >= OptimizationLevel::Optimized {
+            self.add_composer_runtime_classes();
         }
 
         debug!("Found {} classes", self.classmap.len());
+    }
+
+    /// Prefer classes whose short name matches the file stem when a file
+    /// yields multiple declarations.
+    ///
+    /// Composer's optimized classmap behavior effectively prioritizes
+    /// filename-matching declarations for PSR paths. This also guards against
+    /// scanner artifacts in expressions like `$node->class instanceof ...`.
+    fn prefer_file_stem_classes(classes: Vec<String>, path: &Path) -> Vec<String> {
+        if classes.len() <= 1 {
+            return classes;
+        }
+
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            return classes;
+        };
+
+        let matching: Vec<String> = classes
+            .iter()
+            .filter(|class| class.rsplit('\\').next().is_some_and(|short| short == stem))
+            .cloned()
+            .collect();
+
+        if matching.is_empty() {
+            classes
+        } else {
+            matching
+        }
+    }
+
+    /// Add Composer runtime classes that are generated in `vendor/composer`.
+    fn add_composer_runtime_classes(&mut self) {
+        let installed_versions_path = self.vendor_dir.join("composer/InstalledVersions.php");
+        if installed_versions_path.exists() {
+            self.classmap.insert(
+                "Composer\\InstalledVersions".to_string(),
+                installed_versions_path,
+            );
+        }
+    }
+
+    /// Get PSR compliance warnings collected during generation.
+    #[must_use]
+    pub fn warnings(&self) -> &[String] {
+        &self.psr_warnings
+    }
+
+    fn psr4_class_matches(namespace: &str, root: &Path, file_path: &Path, class: &str) -> bool {
+        let relative_class = if namespace.is_empty() {
+            class
+        } else {
+            let Some(rest) = class.strip_prefix(namespace) else {
+                return false;
+            };
+            if rest.is_empty() {
+                return false;
+            }
+            rest
+        };
+
+        let expected = format!("{}.php", relative_class.replace('\\', "/"));
+        let Ok(relative_path) = file_path.strip_prefix(root) else {
+            return false;
+        };
+        Self::normalize_path(relative_path) == expected
+    }
+
+    fn psr0_class_matches(namespace: &str, root: &Path, file_path: &Path, class: &str) -> bool {
+        let relative_class = if namespace.is_empty() {
+            class
+        } else {
+            let Some(rest) = class.strip_prefix(namespace) else {
+                return false;
+            };
+            if rest.is_empty() {
+                return false;
+            }
+            rest
+        };
+
+        let expected = format!("{}.php", Self::psr0_suffix_to_path(relative_class));
+        let Ok(relative_path) = file_path.strip_prefix(root) else {
+            return false;
+        };
+        Self::normalize_path(relative_path) == expected
+    }
+
+    fn psr0_suffix_to_path(relative_class: &str) -> String {
+        let logical = relative_class.replace('\\', "/");
+        if let Some((namespace_part, class_part)) = logical.rsplit_once('/') {
+            if namespace_part.is_empty() {
+                class_part.replace('_', "/")
+            } else {
+                format!("{namespace_part}/{}", class_part.replace('_', "/"))
+            }
+        } else {
+            logical.replace('_', "/")
+        }
+    }
+
+    fn format_psr_warning(
+        standard: &str,
+        class: &str,
+        class_path: &Path,
+        namespace: &str,
+        mapping_path: &Path,
+        vendor_dir: &Path,
+    ) -> String {
+        let project_root = vendor_dir.parent().unwrap_or_else(|| Path::new("."));
+        let class_display = Self::display_project_path(class_path, project_root);
+        let mut mapping_display = Self::display_project_path(mapping_path, project_root);
+        if mapping_display != "./" {
+            mapping_display = mapping_display.trim_end_matches('/').to_string();
+        }
+        format!(
+            "Class {class} located in {class_display} does not comply with {standard} autoloading standard (rule: {namespace} => {mapping_display}). Skipping."
+        )
+    }
+
+    fn display_project_path(path: &Path, project_root: &Path) -> String {
+        if let Ok(relative) = path.strip_prefix(project_root) {
+            let relative = Self::normalize_path(relative);
+            let relative = relative.trim_end_matches('/');
+            if relative.is_empty() {
+                "./".to_string()
+            } else {
+                format!("./{relative}")
+            }
+        } else {
+            Self::normalize_path(path).trim_end_matches('/').to_string()
+        }
+    }
+
+    fn normalize_path(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
     }
 
     /// Generate all autoloader files.
@@ -648,18 +909,51 @@ class ComposerAutoloaderInit{hash}
 
     /// Build `autoload_static.php` content with optimized data structures.
     fn build_autoload_static(&self, hash: &str) -> String {
-        // Build prefix lengths for PSR-4
-        let mut prefix_lengths: HashMap<char, HashMap<&str, usize>> = HashMap::new();
-        for namespace in self.psr4_map.keys() {
+        // Build PSR-4 prefix lengths and split fallback dirs (empty prefix)
+        let mut prefix_lengths: BTreeMap<char, BTreeMap<String, usize>> = BTreeMap::new();
+        let mut psr4_regular: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut psr4_fallback: Vec<String> = Vec::new();
+        for (namespace, paths) in &self.psr4_map {
+            if namespace.is_empty() {
+                for p in paths {
+                    psr4_fallback.push(self.make_relative_path(p));
+                }
+                continue;
+            }
+
             if let Some(first_char) = namespace.chars().next() {
                 prefix_lengths
                     .entry(first_char)
                     .or_default()
-                    .insert(namespace.as_str(), namespace.len());
+                    .insert(namespace.clone(), namespace.len());
+            }
+
+            let entry = psr4_regular.entry(namespace.clone()).or_default();
+            for p in paths {
+                entry.push(self.make_relative_path(p));
             }
         }
 
-        // Pre-allocate with estimated capacity
+        // Build PSR-0 prefixes and split fallback dirs (empty prefix)
+        let mut psr0_grouped: BTreeMap<char, BTreeMap<String, Vec<String>>> = BTreeMap::new();
+        let mut psr0_fallback: Vec<String> = Vec::new();
+        for (namespace, paths) in &self.psr0_map {
+            if namespace.is_empty() {
+                for p in paths {
+                    psr0_fallback.push(self.make_relative_path(p));
+                }
+                continue;
+            }
+
+            if let Some(first_char) = namespace.chars().next() {
+                let by_prefix = psr0_grouped.entry(first_char).or_default();
+                let entry = by_prefix.entry(namespace.clone()).or_default();
+                for p in paths {
+                    entry.push(self.make_relative_path(p));
+                }
+            }
+        }
+
         let mut prefix_lengths_php = String::with_capacity(prefix_lengths.len() * 100);
         prefix_lengths_php.push_str("array(\n");
         for (char, prefixes) in &prefix_lengths {
@@ -674,15 +968,45 @@ class ComposerAutoloaderInit{hash}
         prefix_lengths_php.push_str("    )");
 
         // PSR-4 directories - pre-allocate
-        let mut psr4_entries = String::with_capacity(self.psr4_map.len() * 200);
-        for (namespace, paths) in &self.psr4_map {
+        let mut psr4_entries = String::with_capacity(psr4_regular.len() * 200);
+        for (namespace, paths) in &psr4_regular {
             let escaped_ns = namespace.replace('\\', "\\\\");
             psr4_entries.push_str(&format!("        '{escaped_ns}' => array(\n"));
             for p in paths {
-                let relative = self.make_relative_path(p);
-                psr4_entries.push_str(&format!("            __DIR__ . '/..' . '{relative}',\n"));
+                psr4_entries.push_str(&format!("            __DIR__ . '/..' . '{p}',\n"));
             }
             psr4_entries.push_str("        ),\n");
+        }
+
+        // PSR-4 fallback dirs
+        let mut psr4_fallback_entries = String::with_capacity(psr4_fallback.len() * 60);
+        for p in &psr4_fallback {
+            psr4_fallback_entries.push_str(&format!("        __DIR__ . '/..' . '{p}',\n"));
+        }
+
+        // PSR-0 prefixes
+        let mut psr0_prefixes_php = String::with_capacity(psr0_grouped.len() * 160);
+        psr0_prefixes_php.push_str("array(\n");
+        for (char, prefixes) in &psr0_grouped {
+            psr0_prefixes_php.push_str(&format!("        '{char}' => \n"));
+            psr0_prefixes_php.push_str("        array(\n");
+            for (namespace, paths) in prefixes {
+                let escaped_ns = namespace.replace('\\', "\\\\");
+                psr0_prefixes_php.push_str(&format!("            '{escaped_ns}' => array(\n"));
+                for p in paths {
+                    psr0_prefixes_php
+                        .push_str(&format!("                __DIR__ . '/..' . '{p}',\n"));
+                }
+                psr0_prefixes_php.push_str("            ),\n");
+            }
+            psr0_prefixes_php.push_str("        ),\n");
+        }
+        psr0_prefixes_php.push_str("    )");
+
+        // PSR-0 fallback dirs
+        let mut psr0_fallback_entries = String::with_capacity(psr0_fallback.len() * 60);
+        for p in &psr0_fallback {
+            psr0_fallback_entries.push_str(&format!("        __DIR__ . '/..' . '{p}',\n"));
         }
 
         // Classmap entries - BTreeMap is already sorted, no need to sort again
@@ -723,6 +1047,14 @@ class ComposerStaticInit{hash}
     public static $prefixDirsPsr4 = array(
 {psr4_entries}    );
 
+    public static $fallbackDirsPsr4 = array(
+{psr4_fallback_entries}    );
+
+    public static $prefixesPsr0 = {psr0_prefixes_php};
+
+    public static $fallbackDirsPsr0 = array(
+{psr0_fallback_entries}    );
+
     public static $classMap = array(
 {classmap_entries}    );
 
@@ -731,6 +1063,9 @@ class ComposerStaticInit{hash}
         return \Closure::bind(function () use ($loader) {{
             $loader->prefixLengthsPsr4 = ComposerStaticInit{hash}::$prefixLengthsPsr4;
             $loader->prefixDirsPsr4 = ComposerStaticInit{hash}::$prefixDirsPsr4;
+            $loader->fallbackDirsPsr4 = ComposerStaticInit{hash}::$fallbackDirsPsr4;
+            $loader->prefixesPsr0 = ComposerStaticInit{hash}::$prefixesPsr0;
+            $loader->fallbackDirsPsr0 = ComposerStaticInit{hash}::$fallbackDirsPsr0;
             $loader->classMap = ComposerStaticInit{hash}::$classMap;
 
         }}, null, ClassLoader::class);
@@ -961,6 +1296,7 @@ pub struct AutoloaderStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn autoload_config_default() {
@@ -1010,5 +1346,183 @@ mod tests {
         let result = generator
             .make_relative_path(Path::new("/home/user/project/vendor/autoload/src/Foo.php"));
         assert_eq!(result, "/autoload/src/Foo.php");
+    }
+
+    #[test]
+    fn prefer_file_stem_classes_prefers_matching_short_name() {
+        let classes = vec![
+            "Symfony\\Component\\Routing\\Loader\\PhpFileLoader".to_string(),
+            "Symfony\\Component\\Routing\\Loader\\ProtectedPhpFileLoader".to_string(),
+        ];
+
+        let filtered =
+            AutoloaderGenerator::prefer_file_stem_classes(classes, Path::new("PhpFileLoader.php"));
+
+        assert_eq!(
+            filtered,
+            vec!["Symfony\\Component\\Routing\\Loader\\PhpFileLoader"]
+        );
+    }
+
+    #[test]
+    fn prefer_file_stem_classes_keeps_all_when_no_match() {
+        let classes = vec![
+            "Vendor\\Package\\Foo".to_string(),
+            "Vendor\\Package\\Bar".to_string(),
+        ];
+
+        let filtered =
+            AutoloaderGenerator::prefer_file_stem_classes(classes.clone(), Path::new("Baz.php"));
+
+        assert_eq!(filtered, classes);
+    }
+
+    #[test]
+    fn autoload_static_includes_psr0_prefixes_in_initializer() {
+        let tmp = tempdir().expect("create temp dir");
+        let vendor = tmp.path().join("vendor");
+        let package_dir = vendor.join("simplesoftwareio/simple-qrcode");
+        std::fs::create_dir_all(package_dir.join("src")).expect("create package dir");
+
+        let mut generator = AutoloaderGenerator::new(vendor);
+        let mut config = AutoloadConfig::default();
+        config.psr0.mappings.insert(
+            "SimpleSoftwareIO\\QrCode\\".to_string(),
+            vec!["src".to_string()],
+        );
+        generator.add_package(&package_dir, &config);
+
+        let content = generator.build_autoload_static("testhash");
+        assert!(content.contains("public static $prefixesPsr0 = array("));
+        assert!(content.contains("'SimpleSoftwareIO\\\\QrCode\\\\' => array("));
+        assert!(
+            content.contains("$loader->prefixesPsr0 = ComposerStaticInittesthash::$prefixesPsr0;")
+        );
+    }
+
+    #[test]
+    fn autoload_static_includes_fallback_dirs() {
+        let tmp = tempdir().expect("create temp dir");
+        let vendor = tmp.path().join("vendor");
+        let package_dir = vendor.join("vendor/example-fallback");
+        std::fs::create_dir_all(package_dir.join("src")).expect("create package dir");
+
+        let mut generator = AutoloaderGenerator::new(vendor);
+        let mut config = AutoloadConfig::default();
+        config
+            .psr4
+            .mappings
+            .insert(String::new(), vec!["src".to_string()]);
+        config
+            .psr0
+            .mappings
+            .insert(String::new(), vec!["src".to_string()]);
+        generator.add_package(&package_dir, &config);
+
+        let content = generator.build_autoload_static("fallbackhash");
+        assert!(content.contains("public static $fallbackDirsPsr4 = array("));
+        assert!(content.contains("public static $fallbackDirsPsr0 = array("));
+        assert!(content.contains(
+            "$loader->fallbackDirsPsr4 = ComposerStaticInitfallbackhash::$fallbackDirsPsr4;"
+        ));
+        assert!(content.contains(
+            "$loader->fallbackDirsPsr0 = ComposerStaticInitfallbackhash::$fallbackDirsPsr0;"
+        ));
+    }
+
+    #[test]
+    fn non_compliant_psr4_class_is_skipped_and_reported() {
+        let tmp = tempdir().expect("create temp dir");
+        let project_root = tmp.path().to_path_buf();
+        let vendor = project_root.join("vendor");
+        std::fs::create_dir_all(&vendor).expect("create vendor dir");
+
+        let app_dir = project_root.join("app");
+        std::fs::create_dir_all(&app_dir).expect("create app dir");
+        std::fs::write(
+            app_dir.join("NotificationSeenLast.php"),
+            "<?php\nclass NotificationSeenLast {}\n",
+        )
+        .expect("write php file");
+
+        let mut generator =
+            AutoloaderGenerator::with_optimization(vendor, OptimizationLevel::Optimized);
+        let mut config = AutoloadConfig::default();
+        config
+            .psr4
+            .mappings
+            .insert("App\\".to_string(), vec!["app".to_string()]);
+        generator.add_package(project_root.as_path(), &config);
+        generator.finalize();
+
+        assert!(
+            !generator.classmap.contains_key("NotificationSeenLast"),
+            "non-compliant class should be skipped"
+        );
+        assert!(
+            generator
+                .warnings()
+                .iter()
+                .any(|w| w.contains("NotificationSeenLast")
+                    && w.contains("psr-4 autoloading standard")
+                    && w.contains("App\\ => ./app")),
+            "expected a composer-style PSR-4 warning, got {:?}",
+            generator.warnings()
+        );
+    }
+
+    #[test]
+    fn compliant_psr4_class_is_kept_without_warning() {
+        let tmp = tempdir().expect("create temp dir");
+        let project_root = tmp.path().to_path_buf();
+        let vendor = project_root.join("vendor");
+        std::fs::create_dir_all(&vendor).expect("create vendor dir");
+
+        let model_dir = project_root.join("app/Models");
+        std::fs::create_dir_all(&model_dir).expect("create model dir");
+        std::fs::write(
+            model_dir.join("User.php"),
+            "<?php\nnamespace App\\Models;\nclass User {}\n",
+        )
+        .expect("write php file");
+
+        let mut generator =
+            AutoloaderGenerator::with_optimization(vendor, OptimizationLevel::Optimized);
+        let mut config = AutoloadConfig::default();
+        config
+            .psr4
+            .mappings
+            .insert("App\\".to_string(), vec!["app".to_string()]);
+        generator.add_package(project_root.as_path(), &config);
+        generator.finalize();
+
+        assert!(
+            generator.classmap.contains_key("App\\Models\\User"),
+            "compliant class should be in classmap"
+        );
+        assert!(
+            generator.warnings().is_empty(),
+            "no warnings expected, got {:?}",
+            generator.warnings()
+        );
+    }
+
+    #[test]
+    fn add_composer_runtime_classes_adds_installed_versions() {
+        let tmp = tempdir().expect("create temp dir");
+        let vendor = tmp.path().join("vendor");
+        let composer_dir = vendor.join("composer");
+        std::fs::create_dir_all(&composer_dir).expect("create composer dir");
+
+        let installed_versions = composer_dir.join("InstalledVersions.php");
+        std::fs::write(&installed_versions, "<?php\n").expect("write installed versions file");
+
+        let mut generator = AutoloaderGenerator::new(vendor.clone());
+        generator.add_composer_runtime_classes();
+
+        assert_eq!(
+            generator.classmap.get("Composer\\InstalledVersions"),
+            Some(&installed_versions)
+        );
     }
 }

@@ -209,6 +209,7 @@ impl PackagistClient {
     }
 
     /// Create client with shared cache.
+    #[must_use]
     pub fn with_cache(mut self, cache: Arc<RepositoryCache>) -> Self {
         self.cache = cache;
         self
@@ -445,7 +446,7 @@ impl PackagistClient {
         // Cache the response
         let ttl = response
             .max_age
-            .unwrap_or(self.config.metadata_ttl.unwrap_or(DEFAULT_METADATA_TTL));
+            .unwrap_or_else(|| self.config.metadata_ttl.unwrap_or(DEFAULT_METADATA_TTL));
         let http_meta = self.http.get_cache_metadata(&cache_key);
         let _ = self
             .cache
@@ -927,6 +928,6 @@ mod tests {
         stats.cache_hits.store(75, Ordering::Relaxed);
         stats.cache_misses.store(25, Ordering::Relaxed);
 
-        assert_eq!(stats.cache_hit_rate(), 75.0);
+        assert!((stats.cache_hit_rate() - 75.0).abs() < f64::EPSILON);
     }
 }

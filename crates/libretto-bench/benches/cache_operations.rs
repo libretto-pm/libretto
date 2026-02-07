@@ -151,7 +151,7 @@ fn bench_file_cache_simulation(c: &mut Criterion) {
                     },
                     |(dir, data)| {
                         // Write files (simulating cache put)
-                        for (_i, d) in data.iter().enumerate() {
+                        for d in &data {
                             let hash = blake3::hash(d);
                             let path = dir.path().join(hash.to_hex().to_string());
                             std::fs::write(&path, d).unwrap();

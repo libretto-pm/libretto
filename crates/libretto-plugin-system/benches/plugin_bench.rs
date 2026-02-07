@@ -32,7 +32,7 @@ fn bench_hook_registry(c: &mut Criterion) {
             |b, &n| {
                 let registry = HookRegistry::new();
                 for i in 0..n {
-                    registry.register(Hook::PreInstallCmd, format!("plugin-{i}"), i as i32);
+                    registry.register(Hook::PreInstallCmd, format!("plugin-{i}"), i);
                 }
 
                 b.iter(|| {
@@ -67,7 +67,8 @@ fn bench_event_bus(c: &mut Criterion) {
                         "test.topic",
                         libretto_plugin_system::MessagePayload::Empty,
                     );
-                    black_box(bus.publish(msg).unwrap());
+                    bus.publish(msg).unwrap();
+                    black_box(());
                 });
 
                 // Drain messages
@@ -157,7 +158,7 @@ fn bench_plugin_invocation(c: &mut Criterion) {
 
         // Register 20 plugins (target: support 20+ plugins)
         for i in 0..20 {
-            registry.register(Hook::PreInstallCmd, format!("plugin-{i}"), i as i32);
+            registry.register(Hook::PreInstallCmd, format!("plugin-{i}"), i);
         }
 
         b.iter(|| {

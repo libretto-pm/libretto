@@ -166,111 +166,106 @@ fn handle_auth_config(key: &str, value: Option<&str>, unset: bool, global: bool)
         return Ok(());
     }
 
-    match value {
-        Some(val) => {
-            // Set the credential
-            match auth_type {
-                "github-oauth" => {
-                    auth_manager
-                        .store_mut()
-                        .config_mut()
-                        .set_github_oauth(domain, val);
-                }
-                "gitlab-oauth" => {
-                    auth_manager
-                        .store_mut()
-                        .config_mut()
-                        .set_gitlab_oauth(domain, val);
-                }
-                "gitlab-token" => {
-                    auth_manager
-                        .store_mut()
-                        .config_mut()
-                        .set_gitlab_token(domain, val);
-                }
-                "bearer" => {
-                    auth_manager
-                        .store_mut()
-                        .config_mut()
-                        .set_bearer(domain, val);
-                }
-                "http-basic" => {
-                    // http-basic expects "username:password" format
-                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
-                    if cred_parts.len() != 2 {
-                        anyhow::bail!(
-                            "HTTP Basic credentials must be in format: username:password"
-                        );
-                    }
-                    auth_manager.store_mut().config_mut().set_http_basic(
-                        domain,
-                        cred_parts[0],
-                        cred_parts[1],
-                    );
-                }
-                "bitbucket-oauth" => {
-                    // bitbucket-oauth expects "consumer_key:consumer_secret" format
-                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
-                    if cred_parts.len() != 2 {
-                        anyhow::bail!(
-                            "Bitbucket OAuth credentials must be in format: consumer_key:consumer_secret"
-                        );
-                    }
-                    auth_manager.store_mut().config_mut().set_bitbucket_oauth(
-                        domain,
-                        cred_parts[0],
-                        cred_parts[1],
-                    );
-                }
-                "forgejo-token" => {
-                    // forgejo-token expects "username:token" format
-                    let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
-                    if cred_parts.len() != 2 {
-                        anyhow::bail!("Forgejo token must be in format: username:token");
-                    }
-                    auth_manager.store_mut().config_mut().set_forgejo_token(
-                        domain,
-                        cred_parts[0],
-                        cred_parts[1],
-                    );
-                }
-                _ => {
-                    anyhow::bail!("Unknown auth type: {auth_type}");
-                }
+    if let Some(val) = value {
+        // Set the credential
+        match auth_type {
+            "github-oauth" => {
+                auth_manager
+                    .store_mut()
+                    .config_mut()
+                    .set_github_oauth(domain, val);
             }
-
-            auth_manager.save()?;
-            success(&format!("Set {auth_type} for {domain}"));
+            "gitlab-oauth" => {
+                auth_manager
+                    .store_mut()
+                    .config_mut()
+                    .set_gitlab_oauth(domain, val);
+            }
+            "gitlab-token" => {
+                auth_manager
+                    .store_mut()
+                    .config_mut()
+                    .set_gitlab_token(domain, val);
+            }
+            "bearer" => {
+                auth_manager
+                    .store_mut()
+                    .config_mut()
+                    .set_bearer(domain, val);
+            }
+            "http-basic" => {
+                // http-basic expects "username:password" format
+                let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                if cred_parts.len() != 2 {
+                    anyhow::bail!("HTTP Basic credentials must be in format: username:password");
+                }
+                auth_manager.store_mut().config_mut().set_http_basic(
+                    domain,
+                    cred_parts[0],
+                    cred_parts[1],
+                );
+            }
+            "bitbucket-oauth" => {
+                // bitbucket-oauth expects "consumer_key:consumer_secret" format
+                let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                if cred_parts.len() != 2 {
+                    anyhow::bail!(
+                        "Bitbucket OAuth credentials must be in format: consumer_key:consumer_secret"
+                    );
+                }
+                auth_manager.store_mut().config_mut().set_bitbucket_oauth(
+                    domain,
+                    cred_parts[0],
+                    cred_parts[1],
+                );
+            }
+            "forgejo-token" => {
+                // forgejo-token expects "username:token" format
+                let cred_parts: Vec<&str> = val.splitn(2, ':').collect();
+                if cred_parts.len() != 2 {
+                    anyhow::bail!("Forgejo token must be in format: username:token");
+                }
+                auth_manager.store_mut().config_mut().set_forgejo_token(
+                    domain,
+                    cred_parts[0],
+                    cred_parts[1],
+                );
+            }
+            _ => {
+                anyhow::bail!("Unknown auth type: {auth_type}");
+            }
         }
-        None => {
-            // Get the credential
-            let config = auth_manager.store().config();
-            let value = match auth_type {
-                "github-oauth" => config.get_github_oauth(domain).map(|s| s.to_string()),
-                "gitlab-oauth" => config.get_gitlab_oauth(domain).map(|s| s.to_string()),
-                "gitlab-token" => config.get_gitlab_token(domain).map(|s| s.to_string()),
-                "bearer" => config.get_bearer(domain).map(|s| s.to_string()),
-                "http-basic" => config
-                    .get_http_basic(domain)
-                    .map(|c| format!("{}:********", c.username)),
-                "bitbucket-oauth" => config
-                    .get_bitbucket_oauth(domain)
-                    .map(|c| format!("{}:********", c.consumer_key)),
-                "forgejo-token" => config
-                    .get_forgejo_token(domain)
-                    .map(|c| format!("{}:********", c.username)),
-                _ => {
-                    anyhow::bail!("Unknown auth type: {auth_type}");
-                }
-            };
 
-            match value {
-                Some(v) => {
-                    info(&format!("{key} = {v}"));
-                }
-                None => {
-                    warning(&format!("No {auth_type} configured for {domain}"));
-                }
+        auth_manager.save()?;
+        success(&format!("Set {auth_type} for {domain}"));
+    } else {
+        // Get the credential
+        let config = auth_manager.store().config();
+        let value = match auth_type {
+            "github-oauth" => config.get_github_oauth(domain).map(|s| s.to_string()),
+            "gitlab-oauth" => config.get_gitlab_oauth(domain).map(|s| s.to_string()),
+            "gitlab-token" => config.get_gitlab_token(domain).map(|s| s.to_string()),
+            "bearer" => config.get_bearer(domain).map(|s| s.to_string()),
+            "http-basic" => config
+                .get_http_basic(domain)
+                .map(|c| format!("{}:********", c.username)),
+            "bitbucket-oauth" => config
+                .get_bitbucket_oauth(domain)
+                .map(|c| format!("{}:********", c.consumer_key)),
+            "forgejo-token" => config
+                .get_forgejo_token(domain)
+                .map(|c| format!("{}:********", c.username)),
+            _ => {
+                anyhow::bail!("Unknown auth type: {auth_type}");
+            }
+        };
+
+        match value {
+            Some(v) => {
+                info(&format!("{key} = {v}"));
+            }
+            None => {
+                warning(&format!("No {auth_type} configured for {domain}"));
             }
         }
     }
@@ -438,12 +433,11 @@ fn get_config(path: &PathBuf, key: &str) -> Result<String> {
 
     // Support nested keys with dot notation
     let parts: Vec<&str> = key.split('.').collect();
-    let mut current = &json;
-
-    // First check in config section
-    if let Some(config) = json.get("config") {
-        current = config;
-    }
+    let mut current = if let Some(config) = json.get("config") {
+        config
+    } else {
+        &json
+    };
 
     for part in &parts {
         current = current

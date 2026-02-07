@@ -194,15 +194,15 @@ impl ConfigLoader {
     /// # Errors
     /// Returns error if configuration is invalid.
     pub fn resolve(&self) -> Result<ResolvedConfig> {
-        let mut resolved = ResolvedConfig::default();
-
-        // Set base paths
-        resolved.project_dir = self.project_dir.clone();
-        resolved.home_dir = self
-            .env_config
-            .home
-            .clone()
-            .unwrap_or_else(|| self.platform.config_dir.clone());
+        let mut resolved = ResolvedConfig {
+            project_dir: self.project_dir.clone(),
+            home_dir: self
+                .env_config
+                .home
+                .clone()
+                .unwrap_or_else(|| self.platform.config_dir.clone()),
+            ..Default::default()
+        };
 
         // Layer 1: System config
         if let Some(system) = self.load_system_config() {

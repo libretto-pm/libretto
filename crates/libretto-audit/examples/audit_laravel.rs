@@ -13,7 +13,7 @@ async fn main() -> anyhow::Result<()> {
     let lock_path = Path::new("/tmp/laravel-test/composer.lock");
 
     if !lock_path.exists() {
-        eprintln!("Error: composer.lock not found at {:?}", lock_path);
+        eprintln!("Error: composer.lock not found at {}", lock_path.display());
         eprintln!("Please run: cd /tmp && composer create-project laravel/laravel laravel-test");
         return Ok(());
     }
@@ -89,10 +89,10 @@ async fn main() -> anyhow::Result<()> {
                 );
                 println!("    Advisory: {}", vuln.advisory_id);
                 if let Some(ref fixed) = vuln.fixed_version {
-                    println!("    Fixed in: {}", fixed);
+                    println!("    Fixed in: {fixed}");
                 }
                 for url in &vuln.references {
-                    println!("    Reference: {}", url);
+                    println!("    Reference: {url}");
                 }
                 println!();
             }

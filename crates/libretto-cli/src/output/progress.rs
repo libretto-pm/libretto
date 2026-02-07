@@ -58,7 +58,7 @@ impl ProgressStyle {
     }
 
     /// Convert to indicatif style
-    pub fn to_indicatif(&self, unicode: bool) -> IndicatifProgressStyle {
+    pub fn to_indicatif(self, unicode: bool) -> IndicatifProgressStyle {
         IndicatifProgressStyle::default_bar()
             .template(self.template(unicode))
             .expect("valid template")

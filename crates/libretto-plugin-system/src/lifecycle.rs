@@ -568,7 +568,7 @@ mod tests {
         assert!(PluginState::Active.can_process_events());
         assert!(!PluginState::Loaded.can_process_events());
 
-        assert!(PluginState::Error("".into()).is_error());
+        assert!(PluginState::Error(String::new()).is_error());
         assert!(!PluginState::Active.is_error());
 
         assert!(PluginState::Unloaded.can_load());

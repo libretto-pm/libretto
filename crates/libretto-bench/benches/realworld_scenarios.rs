@@ -203,7 +203,7 @@ fn bench_update_with_changes(c: &mut Criterion) {
                     let removed = map1.keys().filter(|k| !map2.contains_key(*k)).count();
                     let updated = map1
                         .iter()
-                        .filter(|(k, v)| map2.get(*k).map_or(false, |v2| *v != v2))
+                        .filter(|(k, v)| map2.get(*k).is_some_and(|v2| *v != v2))
                         .count();
 
                     black_box((added, removed, updated))
@@ -337,16 +337,16 @@ fn bench_install_simulation(c: &mut Criterion) {
 
                         // 3. Process packages
                         let packages = lock["packages"].as_array().unwrap();
-                        let processed: Vec<_> = packages
-                            .iter()
-                            .map(|p| {
-                                let name = p["name"].as_str().unwrap();
-                                let version = p["version"].as_str().unwrap();
-                                (name, version)
-                            })
-                            .collect();
-
-                        black_box(processed.len())
+                        black_box(
+                            packages
+                                .iter()
+                                .map(|p| {
+                                    let name = p["name"].as_str().unwrap();
+                                    let version = p["version"].as_str().unwrap();
+                                    (name, version)
+                                })
+                                .count(),
+                        )
                     },
                 );
             },

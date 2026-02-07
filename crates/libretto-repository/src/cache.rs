@@ -523,7 +523,7 @@ mod tests {
         stats.hits.store(75, Ordering::Relaxed);
         stats.misses.store(25, Ordering::Relaxed);
 
-        assert_eq!(stats.hit_rate(), 75.0);
+        assert!((stats.hit_rate() - 75.0).abs() < f64::EPSILON);
     }
 
     #[test]

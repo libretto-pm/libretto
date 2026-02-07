@@ -91,7 +91,7 @@ pub struct ComparisonResult {
     pub libretto: Duration,
     /// Composer timing (if available).
     pub composer: Option<Duration>,
-    /// Speedup factor (composer_time / libretto_time).
+    /// Speedup factor (`composer_time` / `libretto_time`).
     pub speedup: Option<f64>,
 }
 
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_bench_result() {
         let result = BenchResult::new("test", Duration::from_secs(1), 100);
-        assert_eq!(result.ops_per_second(), 100.0);
+        assert!((result.ops_per_second() - 100.0).abs() < f64::EPSILON);
     }
 
     #[test]
