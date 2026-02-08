@@ -226,7 +226,7 @@ pub enum Commands {
     SelfUpdate(self_update::SelfUpdateArgs),
 
     /// Shows information about packages
-    #[command(alias = "info")]
+    #[command(alias = "info", disable_version_flag = true)]
     Show(show::ShowArgs),
 
     /// Shows a list of locally modified packages
